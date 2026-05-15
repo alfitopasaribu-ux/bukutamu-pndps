@@ -15,7 +15,7 @@ const PROTECTED_API_ROUTES = [
   "/api/visitors",
   "/api/visitors/",
   "/api/upload",
-  "/api/departments",
+
 ];
 
 
