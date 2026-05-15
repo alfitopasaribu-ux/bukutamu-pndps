@@ -7,9 +7,10 @@ const nextConfig: NextConfig = {
     },
   },
 
-  // Disable ESLint during build (supaya tidak error ESLint flag lama di Vercel)
+  // Nonaktifkan ESLint total saat build (supaya tidak memanggil opsi ESLint flag lama)
   eslint: {
     ignoreDuringBuilds: true,
+    dirs: [],
   },
 
   images: {
