@@ -1,17 +1,10 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",
     },
   },
-
-  // Disable ESLint during build (supaya tidak error ESLint flag lama di Vercel)
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-
   images: {
     domains: ["localhost"],
     remotePatterns: [
@@ -21,7 +14,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-
   async headers() {
     return [
       {
@@ -56,5 +48,5 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
 

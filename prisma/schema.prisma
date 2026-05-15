@@ -1,0 +1,166 @@
+// ============================================
+// PRISMA SCHEMA - BUKU TAMU PENGADILAN NEGERI DENPASAR
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
+}
+
+// ============================================
+// USERS TABLE
+// ============================================
+model User {
+  id         String   @id @default(cuid())
+  username   String   @unique
+  password   String
+  name       String
+  email      String?  @unique
+  role       UserRole @default(ADMIN)
+  isActive   Boolean  @default(true)
+  lastLogin  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  visitLogs VisitLog[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  PTSP
+  VIEWER
+}
+
+// ============================================
+// DEPARTMENTS TABLE
+// ============================================
+model Department {
+  id          String      @id @default(cuid())
+  code        String      @unique
+  name        String
+  description String?
+  parentId    String?
+  order       Int         @default(0)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  parent   Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children Department[] @relation("DepartmentHierarchy")
+  visitors Visitor[]
+
+  @@map("departments")
+}
+
+// ============================================
+// REGISTER COUNTER TABLE
+// ============================================
+model RegisterCounter {
+  id        String   @id @default(cuid())
+  year      Int
+  counter   Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([year])
+  @@map("register_counter")
+}
+
+// ============================================
+// VISITORS TABLE
+// ============================================
+model Visitor {
+  id             String        @id @default(cuid())
+  registerNumber String        @unique
+  name           String
+  address        String
+  phone          String
+  purpose        String
+  departmentId   String
+  status         VisitorStatus @default(REGISTERED)
+  notes          String?
+  visitDate      DateTime      @default(now())
+  checkoutTime   DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  department    Department     @relation(fields: [departmentId], references: [id])
+  uploadedFiles UploadedFile[]
+  visitLogs     VisitLog[]
+
+  @@index([visitDate])
+  @@index([registerNumber])
+  @@index([departmentId])
+  @@map("visitors")
+}
+
+enum VisitorStatus {
+  REGISTERED
+  CHECKED_IN
+  IN_PROGRESS
+  COMPLETED
+  CHECKED_OUT
+  CANCELLED
+}
+
+// ============================================
+// UPLOADED FILES TABLE
+// ============================================
+model UploadedFile {
+  id           String   @id @default(cuid())
+  visitorId    String
+  originalName String
+  storedName   String
+  filePath     String
+  fileType     String
+  fileSize     Int
+  mimeType     String
+  uploadedAt   DateTime @default(now())
+
+  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@index([visitorId])
+  @@map("uploaded_files")
+}
+
+// ============================================
+// VISIT LOGS / ACTIVITY LOG TABLE
+// ============================================
+model VisitLog {
+  id        String      @id @default(cuid())
+  visitorId String?
+  userId    String?
+  action    LogAction
+  details   String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime    @default(now())
+
+  visitor Visitor? @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([visitorId])
+  @@index([userId])
+  @@map("visit_logs")
+}
+
+enum LogAction {
+  VISITOR_REGISTERED
+  VISITOR_UPDATED
+  VISITOR_DELETED
+  VISITOR_CHECKED_IN
+  VISITOR_CHECKED_OUT
+  FILE_UPLOADED
+  FILE_DELETED
+  ADMIN_LOGIN
+  ADMIN_LOGOUT
+  DATA_EXPORTED
+}
