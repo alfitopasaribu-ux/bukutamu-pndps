@@ -5,14 +5,13 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion, AnimatePresence } from "framer-motion";
-import { Eye, EyeOff, Shield, Scale, AlertCircle, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Shield, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { loginSchema, LoginFormData } from "@/lib/validations";
 import LoginParticles from "../LoginParticles";
-
+import NextImage from "next/image";
 
 export default function LoginPage() {
-
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -66,14 +65,10 @@ export default function LoginPage() {
         }}
       />
 
-      {/* Animated particles (client-only to avoid hydration mismatch) */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none" suppressHydrationWarning>
         <LoginParticles />
       </div>
 
-
-
-      {/* Decorative lines */}
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-yellow-400 to-transparent opacity-60" />
       <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-yellow-400 to-transparent opacity-60" />
 
@@ -88,10 +83,16 @@ export default function LoginPage() {
           {/* Logo area */}
           <div className="flex items-center justify-center gap-4 mb-6">
             <motion.div
-              animate={{ rotate: [0, 5, -5, 0] }}
+              animate={{ scale: [1, 1.05, 1] }}
               transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
             >
-              <Scale className="w-14 h-14 text-yellow-400 drop-shadow-lg" />
+              <NextImage
+                src="/logopn.png"
+                alt="Logo Pengadilan Negeri Denpasar"
+                width={90}
+                height={90}
+                className="drop-shadow-lg"
+              />
             </motion.div>
             <div className="h-16 w-px bg-gradient-to-b from-transparent via-yellow-400/50 to-transparent" />
             <div className="text-left">
@@ -124,11 +125,8 @@ export default function LoginPage() {
           className="w-full max-w-md"
         >
           <div className="relative">
-            {/* Glow effect */}
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-600/30 via-yellow-400/20 to-blue-600/30 rounded-2xl blur-xl" />
-
             <div className="relative backdrop-blur-xl bg-white/[0.07] border border-white/10 rounded-2xl p-8 shadow-2xl">
-              {/* Card header */}
               <div className="flex items-center gap-3 mb-8">
                 <div className="p-2.5 rounded-xl bg-blue-500/20 border border-blue-400/20">
                   <Shield className="w-5 h-5 text-blue-400" />
@@ -144,7 +142,6 @@ export default function LoginPage() {
               </div>
 
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-                {/* Username field */}
                 <div className="space-y-1.5">
                   <label className="text-white/60 text-xs font-medium tracking-wider uppercase">
                     Username
@@ -173,7 +170,6 @@ export default function LoginPage() {
                   </AnimatePresence>
                 </div>
 
-                {/* Password field */}
                 <div className="space-y-1.5">
                   <label className="text-white/60 text-xs font-medium tracking-wider uppercase">
                     Password
@@ -209,7 +205,6 @@ export default function LoginPage() {
                   </AnimatePresence>
                 </div>
 
-                {/* Submit button */}
                 <motion.button
                   type="submit"
                   disabled={isLoading}
@@ -245,7 +240,6 @@ export default function LoginPage() {
                 </motion.button>
               </form>
 
-              {/* Footer */}
               <div className="mt-8 pt-6 border-t border-white/10 text-center">
                 <p className="text-white/25 text-xs">
                   © 2026 Pengadilan Negeri Denpasar
@@ -258,7 +252,6 @@ export default function LoginPage() {
           </div>
         </motion.div>
 
-        {/* Bottom badge */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

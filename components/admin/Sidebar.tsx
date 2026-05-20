@@ -8,12 +8,12 @@ import {
   Users,
   Activity,
   Settings,
-  Scale,
   LogOut,
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import NextImage from "next/image";
 
 const navItems = [
   { href: "/admin", icon: LayoutDashboard, label: "Dashboard", exact: true },
@@ -38,8 +38,13 @@ export default function AdminSidebar({ user }: { user: any }) {
       {/* Logo */}
       <div className="p-6 border-b border-gray-200 dark:border-white/5">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-blue-600 shadow-lg shadow-blue-600/25">
-            <Scale className="w-5 h-5 text-white" />
+          <div className="rounded-xl overflow-hidden flex-shrink-0">
+            <NextImage
+              src="/logopn.png"
+              alt="Logo PN Denpasar"
+              width={36}
+              height={36}
+            />
           </div>
           <div>
             <p className="font-display font-bold text-sm text-gray-900 dark:text-white leading-none">

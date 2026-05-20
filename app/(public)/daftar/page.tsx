@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion, AnimatePresence } from "framer-motion";
+import NextImage from "next/image";
+
 import {
-  Scale,
   User,
   MapPin,
   Phone,
@@ -164,7 +165,8 @@ export default function DaftarPage() {
       {/* Header */}
       <header className="border-b border-white/10 backdrop-blur-sm bg-white/[0.03]">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-4">
-          <Scale className="w-8 h-8 text-yellow-400" />
+          <NextImage src="/logopn.png" alt="Logo PN Denpasar" width={40} height={40} />
+
           <div>
             <h1 className="font-display text-white font-bold text-lg leading-none">
               Pengadilan Negeri Denpasar
