@@ -184,11 +184,11 @@ export default function DaftarPage() {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-10"
         >
-          <h2 className="font-display text-3xl md:text-4xl font-bold text-white mb-3">
-            Register Buku Tamu
+<h2 className="font-display text-3xl md:text-4xl font-bold text-white mb-3">
+            SAPA TAMU DILAN
           </h2>
-          <p className="text-white/50">
-            Isi formulir di bawah ini untuk mendaftarkan kunjungan Anda
+<p className="text-white/50">
+            Sistem Administrasi Penerimaan Tamu Pengadilan
           </p>
         </motion.div>
 
