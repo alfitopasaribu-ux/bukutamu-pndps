@@ -24,6 +24,7 @@ import { formatDateTime, getStatusLabel, getStatusBadgeColor, cn } from "@/lib/u
 import { toast } from "sonner";
 import VisitorModal from "./VisitorModal";
 import Link from "next/link";
+import DepartmentSelect from "@/components/shared/DepartmentSelect";
 
 interface Visitor {
   id: string;
@@ -44,7 +45,13 @@ export default function VisitorTablePage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
+  const [folderDepartmentId, setFolderDepartmentId] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [exporting, setExporting] = useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
@@ -56,6 +63,9 @@ export default function VisitorTablePage() {
         page: String(page),
         limit: "10",
         ...(search && { search }),
+        ...(folderDepartmentId && { departmentId: folderDepartmentId }),
+        ...(dateFrom && { dateFrom }),
+        ...(dateTo && { dateTo }),
       });
       const res = await fetch(`/api/visitors?${params}`);
       const data = await res.json();
@@ -237,6 +247,85 @@ export default function VisitorTablePage() {
           placeholder="Cari nama, no. register, telepon..."
           className="w-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all"
         />
+      </div>
+
+      {/* Folders / Download CSV */}
+      <div className="bg-gray-50/50 dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 rounded-2xl p-4">
+      <div className="flex flex-col md:flex-row md:items-end gap-3">
+          <div className="flex-1 min-w-[220px]">
+            <p className="text-xs font-semibold text-gray-500 dark:text-white/40 mb-1">Tujuan / Folder (filter tabel)</p>
+            <DepartmentSelect
+              value={folderDepartmentId}
+              onChange={(v) => {
+                setFolderDepartmentId(v);
+                setPage(1);
+              }}
+            />
+          </div>
+
+          <div className="min-w-[160px]">
+            <p className="text-xs font-semibold text-gray-500 dark:text-white/40 mb-1">Dari</p>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white"
+            />
+          </div>
+
+          <div className="min-w-[160px]">
+            <p className="text-xs font-semibold text-gray-500 dark:text-white/40 mb-1">Sampai</p>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white"
+            />
+          </div>
+
+          <button
+            onClick={async () => {
+              if (!folderDepartmentId) {
+                toast.error("Pilih Tujuan / Folder dulu");
+                return;
+              }
+              try {
+                setExporting(true);
+                const params = new URLSearchParams();
+                params.set("departmentId", folderDepartmentId);
+                params.set("tzOffsetMinutes", "480"); // Bali UTC+8
+                if (dateFrom) params.set("dateFrom", dateFrom);
+                if (dateTo) params.set("dateTo", dateTo);
+
+                const res = await fetch(`/api/reports/visitors-by-department-detail?${params.toString()}`);
+                if (!res.ok) throw new Error("Export failed");
+
+                const blob = await res.blob();
+                const filename =
+                  res.headers.get("Content-Disposition")?.match(/filename="?([^";]+)"?/)?.[1] ||
+                  "buku-tamu-folder.csv";
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+              } catch {
+                toast.error("Gagal download CSV");
+              } finally {
+                setExporting(false);
+              }
+            }}
+            disabled={exporting}
+            className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-all disabled:opacity-50"
+          >
+            <Download className="w-4 h-4" />
+            {exporting ? "Menyiapkan..." : "Download CSV"}
+          </button>
+        </div>
       </div>
 
       {/* Table */}

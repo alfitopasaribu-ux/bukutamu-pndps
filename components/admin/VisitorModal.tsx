@@ -77,16 +77,24 @@ export default function VisitorModal({
   }, [visitor, reset]);
 
   const onSubmit = async (data: VisitorFormData) => {
+    // Pilihan B: admin tidak boleh tambah tamu baru.
+    // Edit data yang sudah ada tetap boleh (PUT), tapi POST ditolak.
+    if (!isEditing) {
+      toast.error("Admin tidak diizinkan menambah tamu. Silakan input melalui halaman daftar.");
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const url = isEditing ? `/api/visitors/${visitor.id}` : "/api/visitors";
-      const method = isEditing ? "PUT" : "POST";
+      const url = `/api/visitors/${visitor.id}`;
+      const method = "PUT";
 
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+
 
       const result = await res.json();
 

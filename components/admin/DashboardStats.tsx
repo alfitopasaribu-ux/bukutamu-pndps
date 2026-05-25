@@ -25,6 +25,8 @@ import {
 } from "recharts";
 import Link from "next/link";
 import { formatDateTime, cn } from "@/lib/utils";
+import ExportReportButton from "@/components/admin/ExportReportButton";
+
 import {
   format,
   subDays,
@@ -256,10 +258,13 @@ export default function DashboardContent({ user }: { user: any }) {
       >
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
           <div>
-            <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2 text-base">
-              <TrendingUp className="w-4 h-4 text-blue-500" />
-              Grafik Kunjungan Tamu
-            </h2>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2 text-base">
+                <TrendingUp className="w-4 h-4 text-blue-500" />
+                Grafik Kunjungan Tamu
+              </h2>
+              <ExportReportButton label="Download CSV" />
+            </div>
             {!isLoading && totalChart > 0 && (
               <div className="flex flex-wrap gap-3 mt-2">
                 <span className="text-xs text-gray-400 dark:text-white/30">

@@ -76,28 +76,35 @@ model RegisterCounter {
 // ============================================
 // VISITORS TABLE
 // ============================================
+enum VisitorEntrySource {
+  PUBLIC_FORM
+  ADMIN_FORM
+}
+
 model Visitor {
-  id             String        @id @default(cuid())
-  registerNumber String        @unique
+  id             String             @id @default(cuid())
+  registerNumber String            @unique
   name           String
   address        String
   phone          String
   purpose        String
   departmentId   String
-  status         VisitorStatus @default(REGISTERED)
+  status         VisitorStatus     @default(REGISTERED)
+  entrySource    VisitorEntrySource @default(PUBLIC_FORM)
   notes          String?
-  visitDate      DateTime      @default(now())
+  visitDate      DateTime          @default(now())
   checkoutTime   DateTime?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
 
-  department    Department     @relation(fields: [departmentId], references: [id])
+  department    Department         @relation(fields: [departmentId], references: [id])
   uploadedFiles UploadedFile[]
   visitLogs     VisitLog[]
 
   @@index([visitDate])
   @@index([registerNumber])
   @@index([departmentId])
+  @@index([entrySource])
   @@map("visitors")
 }
 

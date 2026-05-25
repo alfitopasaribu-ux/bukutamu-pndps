@@ -26,7 +26,11 @@ export async function GET(request: NextRequest) {
 
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: any = { entrySource: "PUBLIC_FORM" };
+
+    // NOTE: untuk filter tujuan/folder + tanggal, kita tetap gunakan visitDate sebagai sumber kebenaran.
+    // jika ingin meliputi ADMIN_FORM nanti bisa diperluas menjadi ALL.
+
 
     if (search) {
       where.OR = [
@@ -45,6 +49,7 @@ export async function GET(request: NextRequest) {
       if (dateFrom) where.visitDate.gte = new Date(dateFrom);
       if (dateTo) where.visitDate.lte = new Date(dateTo + "T23:59:59");
     }
+
 
     const [visitors, total] = await Promise.all([
       prisma.visitor.findMany({
@@ -80,6 +85,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const user = await getUserFromCookie(request);
+
 
     const validation = visitorSchema.safeParse(body);
     if (!validation.success) {
@@ -116,12 +123,24 @@ export async function POST(request: NextRequest) {
     // Generate register number
     const registerNumber = await generateRegisterNumber(prisma);
 
+    const entrySource = body.entrySource === "ADMIN_FORM" ? "ADMIN_FORM" : "PUBLIC_FORM";
+
+    // Rules pilihan: admin tidak boleh tambah tamu (ADMIN_FORM tidak diizinkan)
+    if (entrySource === "ADMIN_FORM") {
+      return NextResponse.json(
+        { error: "Tambah tamu via admin tidak diizinkan. Gunakan daftar tamu melalui halaman registrasi." },
+        { status: 403 }
+      );
+    }
+
+
     // Create visitor
     const visitor = await prisma.visitor.create({
       data: {
         ...sanitized,
         registerNumber,
         status: "REGISTERED",
+        entrySource,
         visitDate: new Date(),
       },
       include: {

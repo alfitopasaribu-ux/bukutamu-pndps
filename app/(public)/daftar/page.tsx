@@ -64,7 +64,7 @@ export default function DaftarPage() {
       const res = await fetch("/api/visitors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, entrySource: "PUBLIC_FORM" }),
       });
 
       const result = await res.json();
@@ -78,12 +78,33 @@ export default function DaftarPage() {
       setVisitorId(newVisitorId);
 
       // 2. Upload files if any
+      const uploadedCount: { ok: number; total: number } = { ok: 0, total: uploadedFiles.length };
+      const uploadErrors: string[] = [];
+
       if (uploadedFiles.length > 0) {
         for (const file of uploadedFiles) {
           const formData = new FormData();
           formData.append("file", file);
           formData.append("visitorId", newVisitorId);
-          await fetch("/api/upload", { method: "POST", body: formData });
+
+          const upRes = await fetch("/api/upload", { method: "POST", body: formData });
+          if (!upRes.ok) {
+            const errJson = await upRes.json().catch(() => ({}));
+            uploadErrors.push(errJson?.details ? `${errJson.error}: ${errJson.details}` : (errJson?.error || `Upload gagal untuk ${file.name} (unknown error)`));
+            continue;
+          }
+
+          uploadedCount.ok += 1;
+        }
+      }
+
+      if (uploadedCount.total > 0 && uploadedCount.ok === 0) {
+        toast.error(uploadErrors[0] || "Upload file gagal");
+      } else if (uploadedCount.total > 0) {
+        if (uploadErrors.length > 0) {
+          toast.error(`Upload: ${uploadedCount.ok}/${uploadedCount.total} berhasil. Sebagian gagal.`);
+        } else {
+          toast.success(`Upload file berhasil (${uploadedCount.ok}/${uploadedCount.total})`);
         }
       }
 

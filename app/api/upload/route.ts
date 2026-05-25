@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "@vercel/blob";
+import { mkdirSync, writeFileSync } from "fs";
+import path from "path";
 import { v4 as uuidv4 } from "uuid";
+
 import { prisma } from "@/lib/prisma";
 import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } from "@/lib/validations";
 
@@ -22,9 +24,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
       return NextResponse.json(
-        { error: "Format file tidak didukung. Gunakan JPG, PNG, WebP, atau PDF" },
+        { error: "Format file tidak didukung" },
         { status: 400 }
       );
     }
@@ -34,21 +37,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Visitor tidak ditemukan" }, { status: 404 });
     }
 
-    // Upload ke Vercel Blob
-    const ext = file.name.split(".").pop();
+    const extRaw = (file.name.split(".").pop() || "file").toLowerCase();
+    const ext = extRaw.replace(/[^a-z0-9]/gi, "");
     const storedName = `${uuidv4()}.${ext}`;
-    const blob = await put(`uploads/${visitorId}/${storedName}`, file, {
-      access: "public",
-    });
 
-    // Simpan ke DB dengan URL blob
+    // Pastikan folder: public/uploads/<visitorId>/
+    const uploadsDir = path.join(process.cwd(), "public", "uploads", visitorId);
+    mkdirSync(uploadsDir, { recursive: true });
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const fileDiskPath = path.join(uploadsDir, storedName);
+    writeFileSync(fileDiskPath, buffer);
+
+    // URL publik untuk diakses via browser
+    const fileUrl = `/uploads/${visitorId}/${storedName}`;
+
     const uploadedFile = await prisma.uploadedFile.create({
       data: {
         visitorId,
         originalName: file.name,
         storedName,
-        filePath: blob.url,
-        fileType: ext?.toUpperCase() || "FILE",
+        filePath: fileUrl,
+        fileType: ext.toUpperCase() || "FILE",
         fileSize: file.size,
         mimeType: file.type,
       },
@@ -68,8 +78,15 @@ export async function POST(request: NextRequest) {
       message: "File berhasil diupload",
       data: uploadedFile,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Upload error:", error);
-    return NextResponse.json({ error: "Upload gagal" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Upload gagal",
+        details: error?.message ? String(error.message) : "Unknown upload error",
+      },
+      { status: 500 }
+    );
   }
 }
+

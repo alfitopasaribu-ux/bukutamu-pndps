@@ -3,17 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getUserFromCookie } from "@/lib/auth";
 
 
-import {
-  startOfDay,
-  endOfDay,
-  startOfMonth,
-  endOfMonth,
-  startOfYear,
-  endOfYear,
-  subDays,
-  subMonths,
-  format,
-} from "date-fns";
+import { startOfMonth, endOfMonth, startOfYear, endOfYear, subMonths, format, startOfDay, endOfDay, subDays } from "date-fns";
+import { getBaliDayRange } from "@/lib/baliTime";
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,13 +33,20 @@ export async function GET(request: NextRequest) {
     ] = await Promise.all([
       prisma.visitor.count(),
       prisma.visitor.count({
-        where: { visitDate: { gte: todayStart, lte: todayEnd } },
-      }),
-      prisma.visitor.count({
-        where: { visitDate: { gte: monthStart, lte: monthEnd } },
+        where: {
+          entrySource: "PUBLIC_FORM",
+          visitDate: { gte: todayStart, lte: todayEnd },
+        },
       }),
       prisma.visitor.count({
         where: {
+          entrySource: "PUBLIC_FORM",
+          visitDate: { gte: monthStart, lte: monthEnd },
+        },
+      }),
+      prisma.visitor.count({
+        where: {
+          entrySource: "PUBLIC_FORM",
           status: { in: ["REGISTERED", "CHECKED_IN", "IN_PROGRESS"] },
         },
       }),
@@ -74,10 +72,11 @@ export async function GET(request: NextRequest) {
       Promise.all(
         Array.from({ length: 30 }, (_, i) => {
           const date = subDays(today, 29 - i);
-          const start = startOfDay(date);
-          const end = endOfDay(date);
+          const { start, end } = getBaliDayRange(date);
           return prisma.visitor
-            .count({ where: { visitDate: { gte: start, lte: end } } })
+            .count({
+              where: { entrySource: "PUBLIC_FORM", visitDate: { gte: start, lte: end } },
+            })
             .then((count) => ({
               date: format(date, "yyyy-MM-dd"),
               count,
@@ -91,7 +90,12 @@ export async function GET(request: NextRequest) {
           const start = startOfMonth(m);
           const end = endOfMonth(m);
           return prisma.visitor
-            .count({ where: { visitDate: { gte: start, lte: end } } })
+            .count({
+              where: {
+                entrySource: "PUBLIC_FORM",
+                visitDate: { gte: start, lte: end },
+              },
+            })
             .then((count) => ({
               month: format(m, "yyyy-MM"),
               label: format(m, "MMM yyyy"),
