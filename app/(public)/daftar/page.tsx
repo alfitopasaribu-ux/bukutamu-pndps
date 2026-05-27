@@ -206,7 +206,7 @@ export default function DaftarPage() {
           className="text-center mb-10"
         >
 <h2 className="font-display text-3xl md:text-4xl font-bold text-white mb-3">
-            SAPA TAMU DILAN
+            SAPA TAMU PANDE
           </h2>
 <p className="text-white/50">
             Sistem Administrasi Penerimaan Tamu Pengadilan
