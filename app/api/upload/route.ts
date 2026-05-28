@@ -41,10 +41,12 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
 
     // Upload ke Vercel Blob (serverless friendly) - tidak lagi menulis ke /public/uploads
+    // NOTE: forced rebuild marker: upload-route v2.
     const blob = await put(`${visitorId}/${storedName}`, buffer, {
       contentType: file.type,
       access: "public",
     });
+
 
     const fileUrl = blob.url;
 

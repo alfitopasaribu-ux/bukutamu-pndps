@@ -77,7 +77,8 @@ export default function VisitorTablePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [page, search]);
+  }, [page, search, folderDepartmentId, dateFrom, dateTo]);
+
 
   useEffect(() => {
     const timer = setTimeout(fetchVisitors, search ? 300 : 0);
