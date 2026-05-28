@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdirSync, writeFileSync } from "fs";
-import path from "path";
 import { v4 as uuidv4 } from "uuid";
+import { put } from "@vercel/blob";
 
 import { prisma } from "@/lib/prisma";
 import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } from "@/lib/validations";
@@ -26,10 +25,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        { error: "Format file tidak didukung" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Format file tidak didukung" }, { status: 400 });
     }
 
     const visitor = await prisma.visitor.findUnique({ where: { id: visitorId } });
@@ -41,16 +37,16 @@ export async function POST(request: NextRequest) {
     const ext = extRaw.replace(/[^a-z0-9]/gi, "");
     const storedName = `${uuidv4()}.${ext}`;
 
-    // Pastikan folder: public/uploads/<visitorId>/
-    const uploadsDir = path.join(process.cwd(), "public", "uploads", visitorId);
-    mkdirSync(uploadsDir, { recursive: true });
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const fileDiskPath = path.join(uploadsDir, storedName);
-    writeFileSync(fileDiskPath, buffer);
+    // Upload ke Vercel Blob (serverless friendly) - tidak lagi menulis ke /public/uploads
+    const blob = await put(`${visitorId}/${storedName}`, buffer, {
+      contentType: file.type,
+      access: "public",
+    });
 
-    // URL publik untuk diakses via browser
-    const fileUrl = `/uploads/${visitorId}/${storedName}`;
+    const fileUrl = blob.url;
 
     const uploadedFile = await prisma.uploadedFile.create({
       data: {
