@@ -3,9 +3,8 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { signToken, AUTH_COOKIE_OPTIONS } from "@/lib/auth";
 import { loginSchema } from "@/lib/validations";
-import { z } from "zod";
 
-// Rate limiting simple (production: gunakan Redis/Upstash)
+// Rate limiting simple
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 
 function checkRateLimit(ip: string): boolean {
@@ -13,11 +12,16 @@ function checkRateLimit(ip: string): boolean {
   const attempts = loginAttempts.get(ip);
 
   if (!attempts || now > attempts.resetAt) {
-    loginAttempts.set(ip, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    loginAttempts.set(ip, {
+      count: 1,
+      resetAt: now + 15 * 60 * 1000,
+    });
     return true;
   }
 
-  if (attempts.count >= 5) return false;
+  if (attempts.count >= 5) {
+    return false;
+  }
 
   attempts.count++;
   return true;
@@ -26,55 +30,71 @@ function checkRateLimit(ip: string): boolean {
 export async function POST(request: NextRequest) {
   try {
     const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0] ||
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       request.headers.get("x-real-ip") ||
       "unknown";
 
-    // Rate limit check
+    // Cek rate limit
     if (!checkRateLimit(ip)) {
       return NextResponse.json(
-        { error: "Too Many Requests", message: "Terlalu banyak percobaan login. Coba lagi dalam 15 menit." },
+        {
+          error: "Too Many Requests",
+          message: "Terlalu banyak percobaan login. Coba lagi dalam 15 menit.",
+        },
         { status: 429 }
       );
     }
 
     const body = await request.json();
 
-    // Validate input
+    // Validasi input
     const validation = loginSchema.safeParse(body);
+
     if (!validation.success) {
       return NextResponse.json(
-        { error: "Validation Error", message: validation.error.errors[0].message },
+        {
+          error: "Validation Error",
+          message: validation.error.errors[0]?.message || "Input tidak valid",
+        },
         { status: 400 }
       );
     }
 
     const { username, password } = validation.data;
 
-    // Find user
+    // Cari user berdasarkan username
     const user = await prisma.user.findUnique({
       where: { username },
     });
 
     if (!user || !user.is_active) {
-      await new Promise((r) => setTimeout(r, 1000)); // Prevent timing attacks
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
       return NextResponse.json(
-        { error: "Unauthorized", message: "Username atau password salah" },
+        {
+          error: "Unauthorized",
+          message: "Username atau password salah",
+        },
         { status: 401 }
       );
     }
 
-    // Verify password
+    // Cek password
     const passwordMatch = await bcrypt.compare(password, user.password);
+
     if (!passwordMatch) {
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
       return NextResponse.json(
-        { error: "Unauthorized", message: "Username atau password salah" },
+        {
+          error: "Unauthorized",
+          message: "Username atau password salah",
+        },
         { status: 401 }
       );
     }
 
-    // Generate token
+    // Buat token
     const token = await signToken({
       userId: user.id,
       username: user.username,
@@ -85,21 +105,22 @@ export async function POST(request: NextRequest) {
     // Update last login
     await prisma.user.update({
       where: { id: user.id },
-      data: { last_login: new Date() },
-    });
-
-    // Log activity
-    await prisma.visitLog.create({
       data: {
-        userId: user.id,
-        action: "ADMIN_LOGIN",
-        details: `Login berhasil dari IP: ${ip}`,
-        ipAddress: ip,
-        userAgent: request.headers.get("user-agent") || "",
+        last_login: new Date(),
       },
     });
 
-    // Set cookie
+    // Simpan log aktivitas
+    await prisma.visitLog.create({
+      data: {
+        user_id: user.id,
+        action: "ADMIN_LOGIN",
+        details: `Login berhasil dari IP: ${ip}`,
+        ip_address: ip,
+        user_agent: request.headers.get("user-agent") || "",
+      },
+    });
+
     const response = NextResponse.json({
       success: true,
       message: "Login berhasil",
@@ -112,11 +133,16 @@ export async function POST(request: NextRequest) {
     });
 
     response.cookies.set("auth-token", token, AUTH_COOKIE_OPTIONS);
+
     return response;
   } catch (error) {
     console.error("Login error:", error);
+
     return NextResponse.json(
-      { error: "Internal Server Error", message: "Terjadi kesalahan server" },
+      {
+        error: "Internal Server Error",
+        message: "Terjadi kesalahan server",
+      },
       { status: 500 }
     );
   }
