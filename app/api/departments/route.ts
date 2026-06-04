@@ -27,7 +27,14 @@ export async function GET(_request: NextRequest) {
       return { ...d, level: 2 };
     });
 
-    return NextResponse.json({ data: withLevel });
+    // Pastikan urutan konsisten untuk UI dropdown
+    const sorted = withLevel.sort((a, b) => {
+      // level kecil dulu, lalu order
+      if (a.level !== b.level) return a.level - b.level;
+      return a.order - b.order;
+    });
+
+    return NextResponse.json({ data: sorted });
   } catch (error) {
     console.error("GET /api/departments error:", error);
     return NextResponse.json(
