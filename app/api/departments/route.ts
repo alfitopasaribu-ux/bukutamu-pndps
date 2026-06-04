@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 export async function GET(_request: NextRequest) {
   try {
     const departments = await prisma.department.findMany({
+      where: {
+        is_active: true,
+      },
       orderBy: {
         order: "asc",
       },
@@ -26,7 +29,6 @@ export async function GET(_request: NextRequest) {
       parentId: department.parent_id,
       order: department.order,
       isActive: department.is_active,
-      level: 0,
     }));
 
     return NextResponse.json({
