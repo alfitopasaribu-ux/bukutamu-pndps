@@ -2,17 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromCookie } from "@/lib/auth";
 import {
-  startOfMonth,
+  addDays,
   endOfMonth,
+  format,
+  getDay,
+  startOfMonth,
+  startOfWeek,
   startOfYear,
   endOfYear,
-  subMonths,
-  format,
-  startOfDay,
-  endOfDay,
-  subDays,
 } from "date-fns";
+import { id as localeId } from "date-fns/locale";
 import { getBaliDayRange } from "@/lib/baliTime";
+
+async function countVisitorsBetween(start: Date, end: Date) {
+  return prisma.visitor.count({
+    where: {
+      visit_date: {
+        gte: start,
+        lte: end,
+      },
+    },
+  });
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,14 +35,56 @@ export async function GET(request: NextRequest) {
 
     const today = new Date();
 
-    const todayStart = startOfDay(today);
-    const todayEnd = endOfDay(today);
+    const { start: todayStart, end: todayEnd } = getBaliDayRange(today);
+    const monthStartDate = startOfMonth(today);
+    const monthEndDate = endOfMonth(today);
+    const { start: monthStart } = getBaliDayRange(monthStartDate);
+    const { end: monthEnd } = getBaliDayRange(monthEndDate);
 
-    const monthStart = startOfMonth(today);
-    const monthEnd = endOfMonth(today);
+    const yearStartDate = startOfYear(today);
+    const yearEndDate = endOfYear(today);
+    const { start: yearStart } = getBaliDayRange(yearStartDate);
+    const { end: yearEnd } = getBaliDayRange(yearEndDate);
 
-    const yearStart = startOfYear(today);
-    const yearEnd = endOfYear(today);
+    const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+    const weekDays = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i));
+
+    const monthWeeks: Array<{
+      label: string;
+      startDate: Date;
+      endDate: Date;
+    }> = [];
+
+    let current = new Date(monthStartDate);
+    let weekNumber = 1;
+
+    while (current <= monthEndDate) {
+      const start = new Date(current);
+      const end = new Date(current);
+
+      while (end < monthEndDate && getDay(end) !== 0) {
+        end.setDate(end.getDate() + 1);
+      }
+
+      monthWeeks.push({
+        label: `Minggu ${weekNumber}`,
+        startDate: start,
+        endDate: end,
+      });
+
+      current = addDays(end, 1);
+      weekNumber++;
+    }
+
+    const yearMonths = Array.from({ length: 12 }, (_, i) => {
+      const date = new Date(today.getFullYear(), i, 1);
+      return {
+        month: format(date, "yyyy-MM"),
+        label: format(date, "MMM", { locale: localeId }),
+        startDate: startOfMonth(date),
+        endDate: endOfMonth(date),
+      };
+    });
 
     const [
       totalVisitors,
@@ -42,37 +95,17 @@ export async function GET(request: NextRequest) {
       byStatus,
       byDepartment,
       recentLogs,
-      last30DaysRaw,
-      last12MonthsRaw,
+      weeklyChart,
+      monthlyChart,
+      yearlyChart,
     ] = await Promise.all([
       prisma.visitor.count(),
 
-      prisma.visitor.count({
-        where: {
-          visit_date: {
-            gte: todayStart,
-            lte: todayEnd,
-          },
-        },
-      }),
+      countVisitorsBetween(todayStart, todayEnd),
 
-      prisma.visitor.count({
-        where: {
-          visit_date: {
-            gte: monthStart,
-            lte: monthEnd,
-          },
-        },
-      }),
+      countVisitorsBetween(monthStart, monthEnd),
 
-      prisma.visitor.count({
-        where: {
-          visit_date: {
-            gte: yearStart,
-            lte: yearEnd,
-          },
-        },
-      }),
+      countVisitorsBetween(yearStart, yearEnd),
 
       prisma.visitor.count({
         where: {
@@ -123,52 +156,47 @@ export async function GET(request: NextRequest) {
       }),
 
       Promise.all(
-        Array.from({ length: 30 }, (_, i) => {
-          const date = subDays(today, 29 - i);
-          const { start, end } = getBaliDayRange(date);
+        weekDays.map(async (day) => {
+          const { start, end } = getBaliDayRange(day);
+          const count = await countVisitorsBetween(start, end);
 
-          return prisma.visitor
-            .count({
-              where: {
-                visit_date: {
-                  gte: start,
-                  lte: end,
-                },
-              },
-            })
-            .then((count) => ({
-              date: format(date, "yyyy-MM-dd"),
-              count,
-            }));
+          return {
+            date: format(day, "yyyy-MM-dd"),
+            label: format(day, "EEEE", { locale: localeId }),
+            count,
+          };
         })
       ),
 
       Promise.all(
-        Array.from({ length: 12 }, (_, i) => {
-          const month = subMonths(today, 11 - i);
-          const start = startOfMonth(month);
-          const end = endOfMonth(month);
+        monthWeeks.map(async (week) => {
+          const { start } = getBaliDayRange(week.startDate);
+          const { end } = getBaliDayRange(week.endDate);
+          const count = await countVisitorsBetween(start, end);
 
-          return prisma.visitor
-            .count({
-              where: {
-                visit_date: {
-                  gte: start,
-                  lte: end,
-                },
-              },
-            })
-            .then((count) => ({
-              month: format(month, "yyyy-MM"),
-              label: format(month, "MMM yyyy"),
-              count,
-            }));
+          return {
+            label: week.label,
+            startDate: format(week.startDate, "yyyy-MM-dd"),
+            endDate: format(week.endDate, "yyyy-MM-dd"),
+            count,
+          };
+        })
+      ),
+
+      Promise.all(
+        yearMonths.map(async (month) => {
+          const { start } = getBaliDayRange(month.startDate);
+          const { end } = getBaliDayRange(month.endDate);
+          const count = await countVisitorsBetween(start, end);
+
+          return {
+            month: month.month,
+            label: month.label,
+            count,
+          };
         })
       ),
     ]);
-
-    const weeksInMonth = 4;
-    const avgPerWeek = Math.round(monthVisitors / weeksInMonth);
 
     const deptIds = byDepartment
       .map((item) => item.department_id)
@@ -191,12 +219,14 @@ export async function GET(request: NextRequest) {
     );
 
     const mappedRecentLogs = recentLogs.map((log) => ({
-      ...log,
+      id: log.id,
+      action: log.action,
+      details: log.details,
+      createdAt: log.created_at,
       visitorId: log.visitor_id,
       userId: log.user_id,
       ipAddress: log.ip_address,
       userAgent: log.user_agent,
-      createdAt: log.created_at,
       visitor: log.visitors
         ? {
             name: log.visitors.name,
@@ -209,6 +239,8 @@ export async function GET(request: NextRequest) {
           }
         : null,
     }));
+
+    const avgPerWeek = Math.round(monthVisitors / 4);
 
     return NextResponse.json({
       stats: {
@@ -232,8 +264,12 @@ export async function GET(request: NextRequest) {
       })),
 
       recentLogs: mappedRecentLogs,
-      last30Days: last30DaysRaw,
-      last12Months: last12MonthsRaw,
+
+      charts: {
+        week: weeklyChart,
+        month: monthlyChart,
+        year: yearlyChart,
+      },
     });
   } catch (error) {
     console.error("Dashboard error:", error);
