@@ -9,7 +9,6 @@ import {
   Clock,
   ArrowUpRight,
   Activity,
-  Download,
 } from "lucide-react";
 import {
   Area,
@@ -72,12 +71,6 @@ function CustomTooltip({ active, payload, label }: any) {
       </p>
     </div>
   );
-}
-
-function getCsvMode(chartMode: ChartMode) {
-  if (chartMode === "minggu") return "week";
-  if (chartMode === "bulan") return "month";
-  return "year";
 }
 
 export default function DashboardContent({ user }: { user: any }) {
@@ -172,6 +165,8 @@ export default function DashboardContent({ user }: { user: any }) {
         </p>
       </div>
 
+      <ReportDownloadPanel />
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
@@ -222,17 +217,6 @@ export default function DashboardContent({ user }: { user: any }) {
                 <Activity className="h-5 w-5 text-blue-500" />
                 Grafik Kunjungan Tamu
               </h2>
-
-              <button
-                onClick={() => {
-                  const mode = getCsvMode(chartMode);
-                  window.location.href = `/api/reports/visitors-summary?mode=${mode}`;
-                }}
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/5"
-              >
-                <Download className="h-4 w-4" />
-                Download CSV
-              </button>
             </div>
 
             {!isLoading && (
