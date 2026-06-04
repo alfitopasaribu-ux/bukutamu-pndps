@@ -1,30 +1,33 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import {
-  useReactTable,
-  getCoreRowModel,
-  getPaginationRowModel,
-  flexRender,
-  ColumnDef,
-} from "@tanstack/react-table";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useState } from "react";
 import {
   Search,
-  Plus,
   Download,
   Eye,
   Trash2,
   ChevronLeft,
   ChevronRight,
-  Filter,
   RefreshCw,
+  FileText,
+  ExternalLink,
+  X,
 } from "lucide-react";
-import { formatDateTime, getStatusLabel, getStatusBadgeColor, cn } from "@/lib/utils";
 import { toast } from "sonner";
-import VisitorModal from "./VisitorModal";
 import Link from "next/link";
 import DepartmentSelect from "@/components/shared/DepartmentSelect";
+import { formatDateTime, getStatusBadgeColor, getStatusLabel, cn } from "@/lib/utils";
+
+interface UploadedFile {
+  id: string;
+  originalName: string;
+  storedName: string;
+  filePath: string;
+  fileType: string;
+  fileSize: number;
+  mimeType: string;
+  uploadedAt: string;
+}
 
 interface Visitor {
   id: string;
@@ -34,9 +37,157 @@ interface Visitor {
   phone: string;
   purpose: string;
   status: string;
+  notes?: string | null;
   visitDate: string;
-  department: { id: string; name: string; code: string };
-  _count: { uploadedFiles: number };
+  checkoutTime?: string | null;
+  department: {
+    id: string;
+    name: string;
+    code: string;
+  } | null;
+  uploadedFiles: UploadedFile[];
+  _count: {
+    uploadedFiles: number;
+  };
+}
+
+function formatFileSize(size: number) {
+  if (!size) return "-";
+
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function VisitorDetailModal({
+  visitor,
+  onClose,
+}: {
+  visitor: Visitor | null;
+  onClose: () => void;
+}) {
+  if (!visitor) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-white/10 bg-[#0b1220] shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-[#0b1220] px-6 py-4">
+          <div>
+            <h2 className="text-xl font-bold text-white">Detail Data Tamu</h2>
+            <p className="mt-1 text-sm text-white/50">
+              {visitor.registerNumber}
+            </p>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="rounded-xl p-2 text-white/60 transition hover:bg-white/10 hover:text-white"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-6 p-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <DetailItem label="Nama Lengkap" value={visitor.name} />
+            <DetailItem label="No. Telepon" value={visitor.phone} />
+            <DetailItem label="Alamat" value={visitor.address} />
+            <DetailItem
+              label="Tujuan / Bagian"
+              value={visitor.department?.name || "-"}
+            />
+            <DetailItem label="Keperluan" value={visitor.purpose} />
+            <DetailItem
+              label="Tanggal Kunjungan"
+              value={formatDateTime(visitor.visitDate)}
+            />
+            <DetailItem
+              label="Status"
+              value={getStatusLabel(visitor.status)}
+            />
+            <DetailItem
+              label="Waktu Checkout"
+              value={
+                visitor.checkoutTime ? formatDateTime(visitor.checkoutTime) : "-"
+              }
+            />
+          </div>
+
+          {visitor.notes && (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-white/40">
+                Catatan
+              </p>
+              <p className="mt-2 text-sm text-white">{visitor.notes}</p>
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">
+                  Dokumen Upload / Tanda Pengenal
+                </h3>
+                <p className="mt-1 text-sm text-white/50">
+                  File yang diupload tamu saat daftar kunjungan.
+                </p>
+              </div>
+              <FileText className="h-5 w-5 text-blue-400" />
+            </div>
+
+            {visitor.uploadedFiles?.length ? (
+              <div className="space-y-3">
+                {visitor.uploadedFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <p className="font-medium text-white">
+                        {file.originalName}
+                      </p>
+                      <p className="mt-1 text-xs text-white/50">
+                        {file.fileType} • {formatFileSize(file.fileSize)} •{" "}
+                        {file.uploadedAt
+                          ? formatDateTime(file.uploadedAt)
+                          : "-"}
+                      </p>
+                    </div>
+
+                    <a
+                      href={file.filePath}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Lihat Dokumen
+                    </a>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-white/40">
+                Tidak ada dokumen yang diupload.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-white/40">
+        {label}
+      </p>
+      <p className="mt-2 break-words text-sm font-medium text-white">{value}</p>
+    </div>
+  );
 }
 
 export default function VisitorTablePage() {
@@ -44,401 +195,407 @@ export default function VisitorTablePage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+
   const [search, setSearch] = useState("");
   const [folderDepartmentId, setFolderDepartmentId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
   const [exporting, setExporting] = useState(false);
-
   const [isLoading, setIsLoading] = useState(true);
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   const fetchVisitors = useCallback(async () => {
     setIsLoading(true);
+
     try {
       const params = new URLSearchParams({
         page: String(page),
         limit: "10",
-        ...(search && { search }),
-        ...(folderDepartmentId && { departmentId: folderDepartmentId }),
-        ...(dateFrom && { dateFrom }),
-        ...(dateTo && { dateTo }),
       });
-      const res = await fetch(`/api/visitors?${params}`);
-      const data = await res.json();
-      setVisitors(data.data || []);
-      setTotal(data.pagination?.total || 0);
-      setTotalPages(data.pagination?.totalPages || 1);
-    } catch {
-      toast.error("Gagal memuat data");
+
+      if (search) params.set("search", search);
+      if (folderDepartmentId) params.set("departmentId", folderDepartmentId);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+
+      const res = await fetch(`/api/visitors?${params.toString()}`);
+      const result = await res.json();
+
+      if (!res.ok) {
+        throw new Error(result.error || "Gagal memuat data");
+      }
+
+      setVisitors(result.data || []);
+      setTotal(result.pagination?.total || 0);
+      setTotalPages(result.pagination?.totalPages || 1);
+    } catch (error) {
+      console.error(error);
+      toast.error("Gagal memuat data tamu");
     } finally {
       setIsLoading(false);
     }
   }, [page, search, folderDepartmentId, dateFrom, dateTo]);
 
-
   useEffect(() => {
     const timer = setTimeout(fetchVisitors, search ? 300 : 0);
+
     return () => clearTimeout(timer);
   }, [fetchVisitors, search]);
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Hapus data tamu "${name}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    if (!confirm(`Hapus data tamu "${name}"? Tindakan ini tidak dapat dibatalkan.`)) {
+      return;
+    }
+
     setIsDeleting(id);
+
     try {
-      const res = await fetch(`/api/visitors/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        toast.success("Data tamu berhasil dihapus");
-        fetchVisitors();
-      } else {
-        toast.error("Gagal menghapus data");
+      const res = await fetch(`/api/visitors/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        throw new Error("Gagal menghapus data");
       }
+
+      toast.success("Data tamu berhasil dihapus");
+      fetchVisitors();
     } catch {
-      toast.error("Terjadi kesalahan");
+      toast.error("Gagal menghapus data");
     } finally {
       setIsDeleting(null);
     }
   };
 
-  const columns: ColumnDef<Visitor>[] = [
-    {
-      header: "#",
-      cell: ({ row }) => (
-        <span className="text-gray-400 dark:text-white/30 font-mono text-xs">
-          {(page - 1) * 10 + row.index + 1}
-        </span>
-      ),
-      size: 50,
-    },
-    {
-      accessorKey: "visitDate",
-      header: "Tanggal",
-      cell: ({ row }) => (
-        <span className="text-xs text-gray-500 dark:text-white/50 font-mono whitespace-nowrap">
-          {formatDateTime(row.original.visitDate)}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "registerNumber",
-      header: "No. Register",
-      cell: ({ row }) => (
-        <span className="font-mono text-xs font-semibold text-blue-600 dark:text-blue-400">
-          {row.original.registerNumber}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "name",
-      header: "Nama Tamu",
-      cell: ({ row }) => (
-        <div>
-          <p className="font-medium text-gray-900 dark:text-white text-sm">{row.original.name}</p>
-          <p className="text-xs text-gray-400 dark:text-white/30 truncate max-w-[150px]">{row.original.phone}</p>
-        </div>
-      ),
-    },
-    {
-      accessorKey: "department.name",
-      header: "Tujuan",
-      cell: ({ row }) => (
-        <p className="text-xs text-gray-600 dark:text-white/60 max-w-[180px] leading-relaxed">
-          {row.original.department?.name}
-        </p>
-      ),
-    },
-    {
-      accessorKey: "purpose",
-      header: "Keperluan",
-      cell: ({ row }) => (
-        <p className="text-xs text-gray-500 dark:text-white/40 max-w-[200px] truncate">
-          {row.original.purpose}
-        </p>
-      ),
-    },
-    {
-      accessorKey: "status",
-      header: "Status",
-      cell: ({ row }) => (
-        <span
-          className={cn(
-            "inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium",
-            getStatusBadgeColor(row.original.status)
-          )}
-        >
-          {getStatusLabel(row.original.status)}
-        </span>
-      ),
-    },
-    {
-      id: "actions",
-      header: "",
-      cell: ({ row }) => (
-        <div className="flex items-center gap-1.5">
-            <Link
-              href={`/admin/visitors/${row.original.id}`}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all inline-flex items-center justify-center"
-              aria-label="Lihat detail visitor"
-            >
-              <Eye className="w-3.5 h-3.5" />
-            </Link>
+  const handleDownloadCsv = async () => {
+    if (!folderDepartmentId) {
+      toast.error("Pilih Tujuan / Folder dulu");
+      return;
+    }
 
-          <button
-            onClick={() => handleDelete(row.original.id, row.original.name)}
-            disabled={isDeleting === row.original.id}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all disabled:opacity-50"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-      size: 80,
-    },
-  ];
+    try {
+      setExporting(true);
 
-  const table = useReactTable({
-    data: visitors,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    manualPagination: true,
-    pageCount: totalPages,
-  });
+      const params = new URLSearchParams();
+
+      params.set("departmentId", folderDepartmentId);
+      params.set("tzOffsetMinutes", "480");
+
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+
+      const res = await fetch(
+        `/api/reports/visitors-by-department-detail?${params.toString()}`
+      );
+
+      if (!res.ok) {
+        throw new Error("Export failed");
+      }
+
+      const blob = await res.blob();
+
+      const filename =
+        res.headers
+          .get("Content-Disposition")
+          ?.match(/filename="?([^";]+)"?/)?.[1] || "buku-tamu-folder.csv";
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+
+      a.href = url;
+      a.download = filename;
+
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Gagal download CSV");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h1 className="font-display text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
             Buku Tamu
           </h1>
-          <p className="text-gray-500 dark:text-white/40 text-sm mt-0.5">
+          <p className="mt-2 text-gray-500 dark:text-white/50">
             Total {total.toLocaleString("id-ID")} entri
           </p>
         </div>
-        <div className="sm:ml-auto flex items-center gap-2">
+
+        <div className="flex items-center gap-3">
           <button
             onClick={fetchVisitors}
-            className="p-2 rounded-xl border border-gray-200 dark:border-white/10 text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-all"
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/5"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className="h-4 w-4" />
+            Refresh
           </button>
-          <button
-            onClick={() => {
-              setSelectedVisitor(null);
-              setIsModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-all shadow-md shadow-blue-600/25"
+
+          <Link
+            href="/daftar"
+            target="_blank"
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700"
           >
-            <Plus className="w-4 h-4" />
-            Tambah Tamu
-          </button>
+            + Tambah Tamu
+          </Link>
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Cari nama, no. register, telepon..."
-          className="w-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all"
-        />
-      </div>
-
-      {/* Folders / Download CSV */}
-      <div className="bg-gray-50/50 dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 rounded-2xl p-4">
-      <div className="flex flex-col md:flex-row md:items-end gap-3">
-          <div className="flex-1 min-w-[220px]">
-            <p className="text-xs font-semibold text-gray-500 dark:text-white/40 mb-1">Tujuan / Folder (filter tabel)</p>
-            <DepartmentSelect
-              value={folderDepartmentId}
-              onChange={(v) => {
-                setFolderDepartmentId(v);
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
+        <div className="mb-5 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr_160px_160px_auto]">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
                 setPage(1);
               }}
+              placeholder="Cari nama, no. register, telepon..."
+              className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm text-gray-900 outline-none transition focus:ring-2 focus:ring-blue-500/30 dark:border-white/10 dark:bg-white/[0.03] dark:text-white dark:placeholder-white/30"
             />
           </div>
 
-          <div className="min-w-[160px]">
-            <p className="text-xs font-semibold text-gray-500 dark:text-white/40 mb-1">Dari</p>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white"
-            />
-          </div>
+          <DepartmentSelect
+            value={folderDepartmentId}
+            onChange={(value) => {
+              setFolderDepartmentId(value);
+              setPage(1);
+            }}
+          />
 
-          <div className="min-w-[160px]">
-            <p className="text-xs font-semibold text-gray-500 dark:text-white/40 mb-1">Sampai</p>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white"
-            />
-          </div>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(event) => {
+              setDateFrom(event.target.value);
+              setPage(1);
+            }}
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-900 outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+          />
+
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(event) => {
+              setDateTo(event.target.value);
+              setPage(1);
+            }}
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-900 outline-none dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+          />
 
           <button
-            onClick={async () => {
-              if (!folderDepartmentId) {
-                toast.error("Pilih Tujuan / Folder dulu");
-                return;
-              }
-              try {
-                setExporting(true);
-                const params = new URLSearchParams();
-                params.set("departmentId", folderDepartmentId);
-                params.set("tzOffsetMinutes", "480"); // Bali UTC+8
-                if (dateFrom) params.set("dateFrom", dateFrom);
-                if (dateTo) params.set("dateTo", dateTo);
-
-                const res = await fetch(`/api/reports/visitors-by-department-detail?${params.toString()}`);
-                if (!res.ok) throw new Error("Export failed");
-
-                const blob = await res.blob();
-                const filename =
-                  res.headers.get("Content-Disposition")?.match(/filename="?([^";]+)"?/)?.[1] ||
-                  "buku-tamu-folder.csv";
-
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-              } catch {
-                toast.error("Gagal download CSV");
-              } finally {
-                setExporting(false);
-              }
-            }}
+            onClick={handleDownloadCsv}
             disabled={exporting}
-            className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-all disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
           >
-            <Download className="w-4 h-4" />
+            <Download className="h-4 w-4" />
             {exporting ? "Menyiapkan..." : "Download CSV"}
           </button>
         </div>
-      </div>
 
-      {/* Table */}
-      <div className="bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/5 rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100 dark:border-white/5">
-                {table.getHeaderGroups()[0].headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="px-4 py-3.5 text-left text-xs font-semibold text-gray-500 dark:text-white/40 uppercase tracking-wider whitespace-nowrap bg-gray-50/50 dark:bg-white/[0.02]"
-                  >
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                Array(8).fill(0).map((_, i) => (
-                  <tr key={i} className="border-b border-gray-50 dark:border-white/[0.03]">
-                    {columns.map((_, j) => (
-                      <td key={j} className="px-4 py-3.5">
-                        <div className="h-4 shimmer-loading rounded" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : visitors.length === 0 ? (
+        <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-white/10">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1100px] text-left text-sm">
+              <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-white/[0.04] dark:text-white/40">
                 <tr>
-                  <td colSpan={columns.length} className="px-4 py-16 text-center">
-                    <p className="text-gray-400 dark:text-white/30 text-sm">
-                      {search ? `Tidak ada tamu dengan kata kunci "${search}"` : "Belum ada data tamu"}
-                    </p>
-                  </td>
+                  <th className="px-4 py-4">#</th>
+                  <th className="px-4 py-4">Tanggal</th>
+                  <th className="px-4 py-4">No. Register</th>
+                  <th className="px-4 py-4">Nama Tamu</th>
+                  <th className="px-4 py-4">Tujuan</th>
+                  <th className="px-4 py-4">Keperluan</th>
+                  <th className="px-4 py-4">Upload</th>
+                  <th className="px-4 py-4">Status</th>
+                  <th className="px-4 py-4 text-right">Aksi</th>
                 </tr>
-              ) : (
-                table.getRowModel().rows.map((row, i) => (
-                  <motion.tr
-                    key={row.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.02 }}
-                    className="border-b border-gray-50 dark:border-white/[0.03] hover:bg-gray-50/50 dark:hover:bg-white/[0.02] transition-colors"
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-4 py-3.5">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </thead>
+
+              <tbody className="divide-y divide-gray-200 dark:divide-white/10">
+                {isLoading ? (
+                  Array(6)
+                    .fill(0)
+                    .map((_, index) => (
+                      <tr key={index}>
+                        {Array(9)
+                          .fill(0)
+                          .map((__, cellIndex) => (
+                            <td key={cellIndex} className="px-4 py-4">
+                              <div className="h-4 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+                            </td>
+                          ))}
+                      </tr>
+                    ))
+                ) : visitors.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className="px-4 py-16 text-center text-gray-400"
+                    >
+                      {search
+                        ? `Tidak ada tamu dengan kata kunci "${search}"`
+                        : "Belum ada data tamu"}
+                    </td>
+                  </tr>
+                ) : (
+                  visitors.map((visitor, index) => (
+                    <tr
+                      key={visitor.id}
+                      className="transition hover:bg-gray-50 dark:hover:bg-white/[0.03]"
+                    >
+                      <td className="px-4 py-4 text-gray-500 dark:text-white/40">
+                        {(page - 1) * 10 + index + 1}
                       </td>
-                    ))}
-                  </motion.tr>
-                ))
-              )}
-            </tbody>
-          </table>
+
+                      <td className="px-4 py-4 text-gray-700 dark:text-white/70">
+                        {formatDateTime(visitor.visitDate)}
+                      </td>
+
+                      <td className="px-4 py-4 font-medium text-gray-900 dark:text-white">
+                        {visitor.registerNumber}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <p className="font-medium text-gray-900 dark:text-white">
+                          {visitor.name}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-white/40">
+                          {visitor.phone}
+                        </p>
+                      </td>
+
+                      <td className="px-4 py-4 text-gray-700 dark:text-white/70">
+                        {visitor.department?.name || "-"}
+                      </td>
+
+                      <td className="max-w-[240px] px-4 py-4 text-gray-700 dark:text-white/70">
+                        <p className="line-clamp-2">{visitor.purpose}</p>
+                      </td>
+
+                      <td className="px-4 py-4">
+                        {visitor._count.uploadedFiles > 0 ? (
+                          <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-500">
+                            {visitor._count.uploadedFiles} file
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-gray-500/10 px-3 py-1 text-xs font-semibold text-gray-400">
+                            Tidak ada
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <span
+                          className={cn(
+                            "rounded-full px-3 py-1 text-xs font-semibold",
+                            getStatusBadgeColor(visitor.status)
+                          )}
+                        >
+                          {getStatusLabel(visitor.status)}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => setSelectedVisitor(visitor)}
+                            className="rounded-lg p-2 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-500/10 dark:hover:text-blue-400"
+                            title="Lihat detail"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              handleDelete(visitor.id, visitor.name)
+                            }
+                            disabled={isDeleting === visitor.id}
+                            className="rounded-lg p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-500/10"
+                            title="Hapus"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        {/* Pagination */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-t border-gray-100 dark:border-white/5">
-          <p className="text-xs text-gray-400 dark:text-white/30 font-mono">
-            Menampilkan {((page - 1) * 10) + 1}–{Math.min(page * 10, total)} dari {total.toLocaleString("id-ID")} entri
+        <div className="mt-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-gray-500 dark:text-white/40">
+            Menampilkan{" "}
+            {total === 0 ? 0 : (page - 1) * 10 + 1}–
+            {Math.min(page * 10, total)} dari {total.toLocaleString("id-ID")}{" "}
+            entri
           </p>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center justify-end gap-2">
             <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setPage((value) => Math.max(1, value - 1))}
               disabled={page <= 1 || isLoading}
-              className="p-1.5 rounded-lg border border-gray-200 dark:border-white/10 text-gray-400 hover:text-gray-600 dark:hover:text-white disabled:opacity-40 transition-all"
+              className="rounded-lg border border-gray-200 p-2 text-gray-400 transition hover:text-gray-700 disabled:opacity-40 dark:border-white/10 dark:hover:text-white"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="h-4 w-4" />
             </button>
 
-            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-              let pageNum: number;
-              if (totalPages <= 5) pageNum = i + 1;
-              else if (page <= 3) pageNum = i + 1;
-              else if (page >= totalPages - 2) pageNum = totalPages - 4 + i;
-              else pageNum = page - 2 + i;
+            {Array.from({ length: Math.min(5, totalPages) }, (_, index) => {
+              let pageNumber: number;
+
+              if (totalPages <= 5) {
+                pageNumber = index + 1;
+              } else if (page <= 3) {
+                pageNumber = index + 1;
+              } else if (page >= totalPages - 2) {
+                pageNumber = totalPages - 4 + index;
+              } else {
+                pageNumber = page - 2 + index;
+              }
 
               return (
                 <button
-                  key={pageNum}
-                  onClick={() => setPage(pageNum)}
+                  key={pageNumber}
+                  onClick={() => setPage(pageNumber)}
                   className={cn(
-                    "w-8 h-8 rounded-lg text-xs font-medium transition-all",
-                    pageNum === page
-                      ? "bg-blue-600 text-white shadow-sm shadow-blue-600/25"
-                      : "text-gray-500 dark:text-white/40 hover:bg-gray-100 dark:hover:bg-white/5"
+                    "h-9 w-9 rounded-lg text-sm font-medium transition",
+                    pageNumber === page
+                      ? "bg-blue-600 text-white"
+                      : "text-gray-500 hover:bg-gray-100 dark:text-white/40 dark:hover:bg-white/5"
                   )}
                 >
-                  {pageNum}
+                  {pageNumber}
                 </button>
               );
             })}
 
             <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() =>
+                setPage((value) => Math.min(totalPages, value + 1))
+              }
               disabled={page >= totalPages || isLoading}
-              className="p-1.5 rounded-lg border border-gray-200 dark:border-white/10 text-gray-400 hover:text-gray-600 dark:hover:text-white disabled:opacity-40 transition-all"
+              className="rounded-lg border border-gray-200 p-2 text-gray-400 transition hover:text-gray-700 disabled:opacity-40 dark:border-white/10 dark:hover:text-white"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Modal */}
-      <VisitorModal
-        isOpen={isModalOpen}
-        onClose={() => { setIsModalOpen(false); setSelectedVisitor(null); }}
+      <VisitorDetailModal
         visitor={selectedVisitor}
-        onSuccess={() => { fetchVisitors(); setIsModalOpen(false); }}
+        onClose={() => setSelectedVisitor(null)}
       />
     </div>
   );

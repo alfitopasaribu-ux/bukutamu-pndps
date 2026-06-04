@@ -5,12 +5,52 @@ import { getUserFromCookie } from "@/lib/auth";
 
 type ParamsPromise = Promise<{ id: string }>;
 
+function formatVisitor(visitor: any) {
+  return {
+    id: visitor.id,
+    registerNumber: visitor.register_number,
+    name: visitor.name,
+    address: visitor.address,
+    phone: visitor.phone,
+    purpose: visitor.purpose,
+    status: visitor.status,
+    notes: visitor.notes,
+    visitDate: visitor.visit_date,
+    checkoutTime: visitor.checkout_time,
+    createdAt: visitor.created_at,
+    updatedAt: visitor.updated_at,
+    department: visitor.departments
+      ? {
+          id: visitor.departments.id,
+          code: visitor.departments.code,
+          name: visitor.departments.name,
+        }
+      : null,
+    uploadedFiles: (visitor.uploaded_files ?? []).map((file: any) => ({
+      id: file.id,
+      originalName: file.original_name,
+      storedName: file.stored_name,
+      filePath: file.file_path,
+      fileType: file.file_type,
+      fileSize: file.file_size,
+      mimeType: file.mime_type,
+      uploadedAt: file.uploaded_at,
+    })),
+    visitLogs: (visitor.visit_logs ?? []).map((log: any) => ({
+      id: log.id,
+      action: log.action,
+      details: log.details,
+      ipAddress: log.ip_address,
+      userAgent: log.user_agent,
+      createdAt: log.created_at,
+    })),
+  };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: ParamsPromise }
 ) {
-  const { id } = await params;
-
   try {
     const user = await getUserFromCookie(request);
 
@@ -18,13 +58,19 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
+
     const visitor = await prisma.visitor.findUnique({
       where: {
         id,
       },
       include: {
         departments: true,
-        uploaded_files: true,
+        uploaded_files: {
+          orderBy: {
+            uploaded_at: "desc",
+          },
+        },
         visit_logs: {
           orderBy: {
             created_at: "desc",
@@ -41,21 +87,8 @@ export async function GET(
       );
     }
 
-    const mappedVisitor = {
-      ...visitor,
-      registerNumber: visitor.register_number,
-      departmentId: visitor.department_id,
-      visitDate: visitor.visit_date,
-      checkoutTime: visitor.checkout_time,
-      createdAt: visitor.created_at,
-      updatedAt: visitor.updated_at,
-      department: visitor.departments,
-      uploadedFiles: visitor.uploaded_files,
-      visitLogs: visitor.visit_logs,
-    };
-
     return NextResponse.json({
-      data: mappedVisitor,
+      data: formatVisitor(visitor),
     });
   } catch (error) {
     console.error("Get visitor detail error:", error);
@@ -78,6 +111,7 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const { id } = await params;
     const body = await request.json();
 
     const validation = visitorSchema.partial().safeParse(body);
@@ -92,26 +126,26 @@ export async function PUT(
       );
     }
 
-    const { id } = await params;
-
     const data = validation.data;
 
     const updateData: any = {};
 
-    if (data.name !== undefined) updateData.name = data.name;
-    if (data.address !== undefined) updateData.address = data.address;
-    if (data.phone !== undefined) updateData.phone = data.phone;
-    if (data.purpose !== undefined) updateData.purpose = data.purpose;
-    if (data.departmentId !== undefined) updateData.department_id = data.departmentId;
-    if (data.notes !== undefined) updateData.notes = data.notes;
+    if (data.name) updateData.name = data.name;
+    if (data.address) updateData.address = data.address;
+    if (data.phone) updateData.phone = data.phone;
+    if (data.purpose) updateData.purpose = data.purpose;
+    if (data.departmentId) updateData.department_id = data.departmentId;
+    if (typeof data.notes !== "undefined") updateData.notes = data.notes;
 
     if (body.status) {
       updateData.status = body.status;
+
+      if (body.status === "CHECKED_OUT") {
+        updateData.checkout_time = new Date();
+      }
     }
 
-    if (body.status === "CHECKED_OUT") {
-      updateData.checkout_time = new Date();
-    }
+    updateData.updated_at = new Date();
 
     const visitor = await prisma.visitor.update({
       where: {
@@ -120,6 +154,7 @@ export async function PUT(
       data: updateData,
       include: {
         departments: true,
+        uploaded_files: true,
       },
     });
 
@@ -130,27 +165,16 @@ export async function PUT(
         action: "VISITOR_UPDATED",
         details: `Data tamu diupdate oleh ${user.name}`,
         ip_address:
-          request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+          request.headers.get("x-forwarded-for") ||
           request.headers.get("x-real-ip") ||
           "unknown",
         user_agent: request.headers.get("user-agent") || "",
       },
     });
 
-    const mappedVisitor = {
-      ...visitor,
-      registerNumber: visitor.register_number,
-      departmentId: visitor.department_id,
-      visitDate: visitor.visit_date,
-      checkoutTime: visitor.checkout_time,
-      createdAt: visitor.created_at,
-      updatedAt: visitor.updated_at,
-      department: visitor.departments,
-    };
-
     return NextResponse.json({
       success: true,
-      data: mappedVisitor,
+      data: formatVisitor(visitor),
     });
   } catch (error) {
     console.error("Update visitor error:", error);
@@ -166,8 +190,6 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: ParamsPromise }
 ) {
-  const { id } = await params;
-
   try {
     const user = await getUserFromCookie(request);
 
@@ -178,6 +200,8 @@ export async function DELETE(
     if (user.role !== "SUPER_ADMIN" && user.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    const { id } = await params;
 
     const visitor = await prisma.visitor.findUnique({
       where: {
@@ -203,7 +227,7 @@ export async function DELETE(
         action: "VISITOR_DELETED",
         details: `Tamu dihapus: ${visitor.name} (${visitor.register_number}) oleh ${user.name}`,
         ip_address:
-          request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+          request.headers.get("x-forwarded-for") ||
           request.headers.get("x-real-ip") ||
           "unknown",
         user_agent: request.headers.get("user-agent") || "",

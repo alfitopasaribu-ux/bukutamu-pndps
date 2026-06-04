@@ -4,6 +4,9 @@ import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } from "@/lib/validations";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -52,8 +55,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const extRaw = (file.name.split(".").pop() || "file").toLowerCase();
-    const ext = extRaw.replace(/[^a-z0-9]/gi, "");
+    const extRaw = file.name.split(".").pop() || "file";
+    const ext = extRaw.toLowerCase().replace(/[^a-z0-9]/g, "");
     const storedName = `${uuidv4()}.${ext}`;
 
     const arrayBuffer = await file.arrayBuffer();
@@ -64,14 +67,12 @@ export async function POST(request: NextRequest) {
       access: "public",
     });
 
-    const fileUrl = blob.url;
-
     const uploadedFile = await prisma.uploadedFile.create({
       data: {
         visitor_id: visitorId,
         original_name: file.name,
         stored_name: storedName,
-        file_path: fileUrl,
+        file_path: blob.url,
         file_type: ext.toUpperCase() || "FILE",
         file_size: file.size,
         mime_type: file.type,
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
           1
         )}KB)`,
         ip_address:
-          request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+          request.headers.get("x-forwarded-for") ||
           request.headers.get("x-real-ip") ||
           "unknown",
         user_agent: request.headers.get("user-agent") || "",
@@ -96,7 +97,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: "File berhasil diupload",
-      data: uploadedFile,
+      data: {
+        id: uploadedFile.id,
+        visitorId: uploadedFile.visitor_id,
+        originalName: uploadedFile.original_name,
+        storedName: uploadedFile.stored_name,
+        filePath: uploadedFile.file_path,
+        fileType: uploadedFile.file_type,
+        fileSize: uploadedFile.file_size,
+        mimeType: uploadedFile.mime_type,
+        uploadedAt: uploadedFile.uploaded_at,
+      },
     });
   } catch (error: any) {
     console.error("Upload error:", error);

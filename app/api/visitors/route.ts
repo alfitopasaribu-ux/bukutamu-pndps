@@ -4,7 +4,44 @@ import { visitorSchema } from "@/lib/validations";
 import { generateRegisterNumber, sanitizeInput } from "@/lib/utils";
 import { getUserFromCookie } from "@/lib/auth";
 
-// GET - List visitors admin
+function formatVisitor(visitor: any) {
+  return {
+    id: visitor.id,
+    registerNumber: visitor.register_number,
+    name: visitor.name,
+    address: visitor.address,
+    phone: visitor.phone,
+    purpose: visitor.purpose,
+    status: visitor.status,
+    notes: visitor.notes,
+    visitDate: visitor.visit_date,
+    checkoutTime: visitor.checkout_time,
+    createdAt: visitor.created_at,
+    updatedAt: visitor.updated_at,
+    department: visitor.departments
+      ? {
+          id: visitor.departments.id,
+          code: visitor.departments.code,
+          name: visitor.departments.name,
+        }
+      : null,
+    uploadedFiles: (visitor.uploaded_files ?? []).map((file: any) => ({
+      id: file.id,
+      originalName: file.original_name,
+      storedName: file.stored_name,
+      filePath: file.file_path,
+      fileType: file.file_type,
+      fileSize: file.file_size,
+      mimeType: file.mime_type,
+      uploadedAt: file.uploaded_at,
+    })),
+    _count: {
+      uploadedFiles: visitor._count?.uploaded_files ?? 0,
+    },
+  };
+}
+
+// GET - List visitors untuk admin
 export async function GET(request: NextRequest) {
   try {
     const user = await getUserFromCookie(request);
@@ -15,8 +52,12 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
 
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "10");
+    const page = Math.max(parseInt(searchParams.get("page") || "1", 10), 1);
+    const limit = Math.min(
+      Math.max(parseInt(searchParams.get("limit") || "10", 10), 1),
+      100
+    );
+
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
     const departmentId = searchParams.get("departmentId") || "";
@@ -52,6 +93,12 @@ export async function GET(request: NextRequest) {
             mode: "insensitive",
           },
         },
+        {
+          address: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
       ];
     }
 
@@ -67,11 +114,11 @@ export async function GET(request: NextRequest) {
       where.visit_date = {};
 
       if (dateFrom) {
-        where.visit_date.gte = new Date(dateFrom);
+        where.visit_date.gte = new Date(`${dateFrom}T00:00:00+08:00`);
       }
 
       if (dateTo) {
-        where.visit_date.lte = new Date(`${dateTo}T23:59:59`);
+        where.visit_date.lte = new Date(`${dateTo}T23:59:59+08:00`);
       }
     }
 
@@ -82,15 +129,13 @@ export async function GET(request: NextRequest) {
           departments: {
             select: {
               id: true,
-              name: true,
               code: true,
+              name: true,
             },
           },
           uploaded_files: {
-            select: {
-              id: true,
-              original_name: true,
-              file_type: true,
+            orderBy: {
+              uploaded_at: "desc",
             },
           },
           _count: {
@@ -105,25 +150,11 @@ export async function GET(request: NextRequest) {
         skip,
         take: limit,
       }),
-      prisma.visitor.count({
-        where,
-      }),
+      prisma.visitor.count({ where }),
     ]);
 
-    const mappedVisitors = visitors.map((visitor: any) => ({
-      ...visitor,
-      registerNumber: visitor.register_number,
-      departmentId: visitor.department_id,
-      visitDate: visitor.visit_date,
-      checkoutTime: visitor.checkout_time,
-      createdAt: visitor.created_at,
-      updatedAt: visitor.updated_at,
-      department: visitor.departments,
-      uploadedFiles: visitor.uploaded_files,
-    }));
-
     return NextResponse.json({
-      data: mappedVisitors,
+      data: visitors.map(formatVisitor),
       pagination: {
         page,
         limit,
@@ -141,7 +172,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create visitor public
+// POST - Create visitor dari halaman daftar
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -166,7 +197,7 @@ export async function POST(request: NextRequest) {
       phone: sanitizeInput(data.phone),
       purpose: sanitizeInput(data.purpose),
       department_id: data.departmentId,
-      notes: data.notes ? sanitizeInput(data.notes) : undefined,
+      notes: data.notes ? sanitizeInput(data.notes) : null,
     };
 
     const department = await prisma.department.findUnique({
@@ -186,13 +217,24 @@ export async function POST(request: NextRequest) {
 
     const visitor = await prisma.visitor.create({
       data: {
-        ...sanitized,
         register_number: registerNumber,
+        name: sanitized.name,
+        address: sanitized.address,
+        phone: sanitized.phone,
+        purpose: sanitized.purpose,
+        department_id: sanitized.department_id,
+        notes: sanitized.notes,
         status: "REGISTERED",
         visit_date: new Date(),
       },
       include: {
         departments: true,
+        uploaded_files: true,
+        _count: {
+          select: {
+            uploaded_files: true,
+          },
+        },
       },
     });
 
@@ -202,30 +244,19 @@ export async function POST(request: NextRequest) {
         action: "VISITOR_REGISTERED",
         details: `Tamu baru: ${visitor.name} - ${registerNumber}`,
         ip_address:
-          request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+          request.headers.get("x-forwarded-for") ||
           request.headers.get("x-real-ip") ||
           "unknown",
         user_agent: request.headers.get("user-agent") || "",
       },
     });
 
-    const mappedVisitor = {
-      ...visitor,
-      registerNumber: visitor.register_number,
-      departmentId: visitor.department_id,
-      visitDate: visitor.visit_date,
-      checkoutTime: visitor.checkout_time,
-      createdAt: visitor.created_at,
-      updatedAt: visitor.updated_at,
-      department: visitor.departments,
-    };
-
     return NextResponse.json(
       {
         success: true,
         message: "Registrasi berhasil",
-        data: mappedVisitor,
         registerNumber,
+        data: formatVisitor(visitor),
       },
       { status: 201 }
     );
