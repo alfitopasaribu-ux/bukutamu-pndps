@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     // Update last login
     await prisma.user.update({
       where: { id: user.id },
-      data: { lastLogin: new Date() },
+      data: { last_login: new Date() },
     });
 
     // Log activity
