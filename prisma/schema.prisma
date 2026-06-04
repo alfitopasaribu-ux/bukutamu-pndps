@@ -1,7 +1,3 @@
-// ============================================
-// PRISMA SCHEMA - BUKU TAMU PENGADILAN NEGERI DENPASAR
-// ============================================
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -12,24 +8,106 @@ datasource db {
   directUrl = env("DATABASE_URL")
 }
 
-// ============================================
-// USERS TABLE
-// ============================================
 model User {
-  id         String   @id @default(cuid())
-  username   String   @unique
+  id         String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  username   String     @unique
   password   String
   name       String
-  email      String?  @unique
-  role       UserRole @default(ADMIN)
-  isActive   Boolean  @default(true)
-  lastLogin  DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  visitLogs VisitLog[]
+  email      String?    @unique
+  role       UserRole   @default(ADMIN)
+  is_active  Boolean    @default(true)
+  last_login DateTime?  @db.Timestamptz(6)
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at DateTime   @default(now()) @db.Timestamptz(6)
+  visit_logs VisitLog[]
 
   @@map("users")
+}
+
+model Department {
+  id                String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  code              String       @unique
+  name              String
+  description       String?
+  parent_id         String?
+  order             Int          @default(0)
+  is_active         Boolean      @default(true)
+  created_at        DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime     @default(now()) @db.Timestamptz(6)
+  departments       Department?  @relation("departmentsTodepartments", fields: [parent_id], references: [id], onUpdate: NoAction)
+  other_departments Department[] @relation("departmentsTodepartments")
+  visitors          Visitor[]
+
+  @@index([parent_id], map: "idx_departments_parent_id")
+  @@map("departments")
+}
+
+model RegisterCounter {
+  id         String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  year       Int      @unique
+  counter    Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("register_counter")
+}
+
+model Visitor {
+  id              String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  register_number String         @unique
+  name            String
+  address         String
+  phone           String
+  purpose         String
+  department_id   String
+  status          VisitorStatus  @default(REGISTERED)
+  notes           String?
+  visit_date      DateTime       @default(now()) @db.Timestamptz(6)
+  checkout_time   DateTime?      @db.Timestamptz(6)
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime       @default(now()) @db.Timestamptz(6)
+  uploaded_files  UploadedFile[]
+  visit_logs      VisitLog[]
+  departments     Department     @relation(fields: [department_id], references: [id], onUpdate: NoAction)
+
+  @@index([department_id], map: "idx_visitors_department_id")
+  @@index([register_number], map: "idx_visitors_register_number")
+  @@index([status], map: "idx_visitors_status")
+  @@index([visit_date(sort: Desc)], map: "idx_visitors_visit_date")
+  @@map("visitors")
+}
+
+model UploadedFile {
+  id            String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  visitor_id    String
+  original_name String
+  stored_name   String
+  file_path     String
+  file_type     String
+  file_size     Int
+  mime_type     String
+  uploaded_at   DateTime @default(now()) @db.Timestamptz(6)
+  visitors      Visitor  @relation(fields: [visitor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([visitor_id], map: "idx_uploaded_files_visitor_id")
+  @@map("uploaded_files")
+}
+
+model VisitLog {
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  visitor_id String?
+  user_id    String?
+  action     LogAction
+  details    String?
+  ip_address String?
+  user_agent String?
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  users      User?     @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  visitors   Visitor?  @relation(fields: [visitor_id], references: [id], onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)], map: "idx_visit_logs_created_at")
+  @@index([user_id], map: "idx_visit_logs_user_id")
+  @@index([visitor_id], map: "idx_visit_logs_visitor_id")
+  @@map("visit_logs")
 }
 
 enum UserRole {
@@ -39,73 +117,9 @@ enum UserRole {
   VIEWER
 }
 
-// ============================================
-// DEPARTMENTS TABLE
-// ============================================
-model Department {
-  id          String      @id @default(cuid())
-  code        String      @unique
-  name        String
-  description String?
-  parentId    String?
-  order       Int         @default(0)
-  isActive    Boolean     @default(true)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  parent   Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
-  children Department[] @relation("DepartmentHierarchy")
-  visitors Visitor[]
-
-  @@map("departments")
-}
-
-// ============================================
-// REGISTER COUNTER TABLE
-// ============================================
-model RegisterCounter {
-  id        String   @id @default(cuid())
-  year      Int
-  counter   Int      @default(0)
-  updatedAt DateTime @updatedAt
-
-  @@unique([year])
-  @@map("register_counter")
-}
-
-// ============================================
-// VISITORS TABLE
-// ============================================
 enum VisitorEntrySource {
   PUBLIC_FORM
   ADMIN_FORM
-}
-
-model Visitor {
-  id             String             @id @default(cuid())
-  registerNumber String            @unique
-  name           String
-  address        String
-  phone          String
-  purpose        String
-  departmentId   String
-  status         VisitorStatus     @default(REGISTERED)
-  entrySource    VisitorEntrySource @default(PUBLIC_FORM)
-  notes          String?
-  visitDate      DateTime          @default(now())
-  checkoutTime   DateTime?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-
-  department    Department         @relation(fields: [departmentId], references: [id])
-  uploadedFiles UploadedFile[]
-  visitLogs     VisitLog[]
-
-  @@index([visitDate])
-  @@index([registerNumber])
-  @@index([departmentId])
-  @@index([entrySource])
-  @@map("visitors")
 }
 
 enum VisitorStatus {
@@ -115,48 +129,6 @@ enum VisitorStatus {
   COMPLETED
   CHECKED_OUT
   CANCELLED
-}
-
-// ============================================
-// UPLOADED FILES TABLE
-// ============================================
-model UploadedFile {
-  id           String   @id @default(cuid())
-  visitorId    String
-  originalName String
-  storedName   String
-  filePath     String
-  fileType     String
-  fileSize     Int
-  mimeType     String
-  uploadedAt   DateTime @default(now())
-
-  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  @@index([visitorId])
-  @@map("uploaded_files")
-}
-
-// ============================================
-// VISIT LOGS / ACTIVITY LOG TABLE
-// ============================================
-model VisitLog {
-  id        String      @id @default(cuid())
-  visitorId String?
-  userId    String?
-  action    LogAction
-  details   String?
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime    @default(now())
-
-  visitor Visitor? @relation(fields: [visitorId], references: [id], onDelete: SetNull)
-  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@index([createdAt])
-  @@index([visitorId])
-  @@index([userId])
-  @@map("visit_logs")
 }
 
 enum LogAction {

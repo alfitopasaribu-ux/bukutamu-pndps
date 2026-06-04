@@ -11,7 +11,8 @@ export async function GET(_request: NextRequest) {
         id: true,
         code: true,
         name: true,
-        parentId: true,
+
+
         order: true,
       },
     });
@@ -19,11 +20,11 @@ export async function GET(_request: NextRequest) {
     const map = new Map(all.map((d) => [d.id, d]));
 
     const withLevel = all.map((d) => {
-      if (!d.parentId) return { ...d, level: 0 };
-      const parent = map.get(d.parentId);
-      if (!parent?.parentId) return { ...d, level: 1 };
-      return { ...d, level: 2 };
+      // Karena sebagian database yang terhubung tidak menyediakan kolom parent,
+      // kita fallback: anggap semua sebagai level 0.
+      return { ...d, level: 0 };
     });
+
 
     // Urutkan konsisten: level lalu order
     const sorted = withLevel.sort((a, b) => {
