@@ -23,6 +23,8 @@ import {
   YAxis,
 } from "recharts";
 import Link from "next/link";
+import ReportDownloadPanel from "@/components/admin/ReportDownloadPanel";
+
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { formatDateTime } from "@/lib/utils";
