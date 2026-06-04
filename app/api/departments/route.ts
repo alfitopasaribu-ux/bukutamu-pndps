@@ -1,7 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(_request: NextRequest) {
+export const dynamic = "force-dynamic";
+
+export async function GET() {
   try {
     const departments = await prisma.department.findMany({
       where: {
@@ -21,24 +23,26 @@ export async function GET(_request: NextRequest) {
       },
     });
 
-    const formattedDepartments = departments.map((department) => ({
-      id: department.id,
-      code: department.code,
-      name: department.name,
-      description: department.description,
-      parentId: department.parent_id,
-      order: department.order,
-      isActive: department.is_active,
-    }));
-
     return NextResponse.json({
-      data: formattedDepartments,
+      success: true,
+      data: departments.map((department) => ({
+        id: department.id,
+        code: department.code,
+        name: department.name,
+        description: department.description,
+        parentId: department.parent_id,
+        order: department.order,
+        isActive: department.is_active,
+      })),
     });
   } catch (error) {
-    console.error("GET /api/departments error:", error);
+    console.error("Get departments error:", error);
 
     return NextResponse.json(
-      { error: "Internal Server Error" },
+      {
+        success: false,
+        error: "Gagal memuat data tujuan/bagian",
+      },
       { status: 500 }
     );
   }

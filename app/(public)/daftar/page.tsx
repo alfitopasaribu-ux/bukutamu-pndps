@@ -102,6 +102,7 @@ export default function DaftarPage() {
           );
 
           const formData = new FormData();
+
           formData.append("file", file);
           formData.append("visitorId", newVisitorId);
 
@@ -183,7 +184,9 @@ export default function DaftarPage() {
   const removeFile = (index: number) => {
     if (isLoading) return;
 
-    setUploadedFiles((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
+    setUploadedFiles((prev) =>
+      prev.filter((_, itemIndex) => itemIndex !== index)
+    );
   };
 
   if (success) {
@@ -331,6 +334,7 @@ export default function DaftarPage() {
                 }
                 error={errors.departmentId?.message}
                 dark
+                disabled={isLoading}
               />
             </div>
 
@@ -398,7 +402,7 @@ export default function DaftarPage() {
                 <div className="mt-3 space-y-2">
                   {uploadedFiles.map((file, index) => (
                     <div
-                      key={`${file.name}-${index}`}
+                      key={`${file.name}-${file.size}-${index}`}
                       className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
                     >
                       {file.type.startsWith("image/") ? (
