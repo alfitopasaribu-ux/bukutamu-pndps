@@ -3,20 +3,82 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-// ─── Department tree — sama persis dengan sistem PTSP+ referensi ─────────────
-const DEPARTMENTS = [
+// Department tree (PTSP + children) - konsisten dengan prisma/schema.prisma
+// Field naming: parent_id, is_active, etc.
+const DEPARTMENTS: Array<{
+  id: string;
+  code: string;
+  name: string;
+  parentId: string | null;
+  order: number;
+}> = [
   // ── PTSP (root nodes, tampil paling atas dropdown) ──────────────────────
-  { id: "d_ptsp_pid", code: "PTSP_PID", name: "Pelayanan Terpadu Satu Pintu Kepaniteraan Muda Pidana", parentId: null, order: 1 },
-  { id: "d_ptsp_pidk", code: "PTSP_PIDK", name: "Pelayanan Terpadu Satu Pintu Kepaniteraan Muda Pidana Khusus", parentId: null, order: 2 },
-  { id: "d_ptsp_per", code: "PTSP_PER", name: "Pelayanan Terpadu Satu Pintu Kepaniteraan Muda Perdata", parentId: null, order: 3 },
-  { id: "d_ptsp_perk", code: "PTSP_PERK", name: "Pelayanan Terpadu Satu Pintu Kepaniteraan Muda Perdata Khusus", parentId: null, order: 4 },
-  { id: "d_ptsp_hk", code: "PTSP_HK", name: "Pelayanan Terpadu Satu Pintu Kepaniteraan Muda Hukum", parentId: null, order: 5 },
-  { id: "d_ptsp_umum", code: "PTSP_UMUM", name: "Pelayanan Terpadu Satu Pintu Sub Bagian Umum", parentId: null, order: 6 },
-  { id: "d_ptsp_info", code: "PTSP_INFO", name: "Pelayanan Terpadu Satu Pintu Informasi dan Pengaduan", parentId: null, order: 7 },
+  {
+    id: "d_ptsp_pid",
+    code: "PTSP_PID",
+    name: "Pelayanan Terpadu Satu Pintu Kepaniteraan Muda Pidana",
+    parentId: null,
+    order: 1,
+  },
+  {
+    id: "d_ptsp_pidk",
+    code: "PTSP_PIDK",
+    name: "Pelayanan Terpadu Satu Pintu Kepaniteraan Muda Pidana Khusus",
+    parentId: null,
+    order: 2,
+  },
+  {
+    id: "d_ptsp_per",
+    code: "PTSP_PER",
+    name: "Pelayanan Terpadu Satu Pintu Kepaniteraan Muda Perdata",
+    parentId: null,
+    order: 3,
+  },
+  {
+    id: "d_ptsp_perk",
+    code: "PTSP_PERK",
+    name: "Pelayanan Terpadu Satu Pintu Kepaniteraan Muda Perdata Khusus",
+    parentId: null,
+    order: 4,
+  },
+  {
+    id: "d_ptsp_hk",
+    code: "PTSP_HK",
+    name: "Pelayanan Terpadu Satu Pintu Kepaniteraan Muda Hukum",
+    parentId: null,
+    order: 5,
+  },
+  {
+    id: "d_ptsp_umum",
+    code: "PTSP_UMUM",
+    name: "Pelayanan Terpadu Satu Pintu Sub Bagian Umum",
+    parentId: null,
+    order: 6,
+  },
+  {
+    id: "d_ptsp_info",
+    code: "PTSP_INFO",
+    name: "Pelayanan Terpadu Satu Pintu Informasi dan Pengaduan",
+    parentId: null,
+    order: 7,
+  },
 
   // ── PTSP Info (children) ────────────────────────────────────────────────
-  { id: "d_ptsp_ecourt", code: "PTSP_ECOURT", name: "Pelayanan Terpadu Satu Pintu Pojok e-Court", parentId: "d_ptsp_info", order: 71 },
-  { id: "d_ptsp_inzage", code: "PTSP_INZAGE", name: "Pelayanan Terpadu Satu Pintu Meja Inzage", parentId: "d_ptsp_info", order: 72 },
+  {
+    id: "d_ptsp_ecourt",
+    code: "PTSP_ECOURT",
+    name: "Pelayanan Terpadu Satu Pintu Pojok e-Court",
+    parentId: "d_ptsp_info",
+    // set di belakang order=7 agar urut
+    order: 71,
+  },
+  {
+    id: "d_ptsp_inzage",
+    code: "PTSP_INZAGE",
+    name: "Pelayanan Terpadu Satu Pintu Meja Inzage",
+    parentId: "d_ptsp_info",
+    order: 72,
+  },
 
   // ── Pimpinan ─────────────────────────────────────────────────────────────
   { id: "d_ketua", code: "KETUA", name: "Ketua Pengadilan", parentId: null, order: 10 },
@@ -71,7 +133,7 @@ async function main() {
       name: "Administrator PTSP",
       email: "admin@pn-denpasar.go.id",
       role: "SUPER_ADMIN",
-      isActive: true,
+      is_active: true,
     },
   });
   console.log("✅ Admin:", admin.username, "/ password: PNDPS2026");
@@ -86,15 +148,17 @@ async function main() {
         id: d.id,
         code: d.code,
         name: d.name,
-        parentId: null,
+        parent_id: null,
         order: d.order,
-        isActive: true,
+        is_active: true,
       },
     });
   }
 
   const level1 = DEPARTMENTS.filter(
-    (d) => d.parentId !== null && DEPARTMENTS.find((p) => p.id === d.parentId)?.parentId === null
+    (d) =>
+      d.parentId !== null &&
+      DEPARTMENTS.find((p) => p.id === d.parentId)?.parentId === null
   );
   for (const d of level1) {
     await prisma.department.upsert({
@@ -104,15 +168,17 @@ async function main() {
         id: d.id,
         code: d.code,
         name: d.name,
-        parentId: d.parentId,
+        parent_id: d.parentId!,
         order: d.order,
-        isActive: true,
+        is_active: true,
       },
     });
   }
 
   const level2 = DEPARTMENTS.filter(
-    (d) => d.parentId !== null && DEPARTMENTS.find((p) => p.id === d.parentId)?.parentId !== null
+    (d) =>
+      d.parentId !== null &&
+      DEPARTMENTS.find((p) => p.id === d.parentId)?.parentId !== null
   );
   for (const d of level2) {
     await prisma.department.upsert({
@@ -122,9 +188,9 @@ async function main() {
         id: d.id,
         code: d.code,
         name: d.name,
-        parentId: d.parentId,
+        parent_id: d.parentId!,
         order: d.order,
-        isActive: true,
+        is_active: true,
       },
     });
   }
