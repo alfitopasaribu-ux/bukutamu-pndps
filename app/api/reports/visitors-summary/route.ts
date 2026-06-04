@@ -9,6 +9,7 @@ import {
   startOfMonth,
   startOfWeek,
   startOfYear,
+  endOfYear,
 } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { getBaliDayRange } from "@/lib/baliTime";
@@ -23,6 +24,28 @@ function escapeCsv(value: unknown) {
   }
 
   return text;
+}
+
+async function getDepartmentCounts(start: Date, end: Date) {
+  const result = await prisma.visitor.groupBy({
+    by: ["department_id"],
+    where: {
+      visit_date: {
+        gte: start,
+        lte: end,
+      },
+    },
+    _count: {
+      department_id: true,
+    },
+  });
+
+  return Object.fromEntries(
+    result.map((item) => [
+      item.department_id,
+      item._count.department_id,
+    ])
+  );
 }
 
 async function countVisitorsBetween(start: Date, end: Date) {
@@ -45,39 +68,67 @@ export async function GET(request: NextRequest) {
     }
 
     const url = new URL(request.url);
+
     const mode = (url.searchParams.get("mode") || "week") as Mode;
 
     const today = new Date();
 
-    let rows: Array<{
-      periode: string;
-      tanggal_awal: string;
-      tanggal_akhir: string;
-      total_tamu: number;
-    }> = [];
+    const selectedYear = Number(url.searchParams.get("year")) || today.getFullYear();
+    const selectedMonth =
+      Number(url.searchParams.get("month")) || today.getMonth() + 1;
+
+    const selectedDate = new Date(selectedYear, selectedMonth - 1, 1);
+
+    const departments = await prisma.department.findMany({
+      where: {
+        is_active: true,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: {
+        order: "asc",
+      },
+    });
+
+    const rows: Array<Record<string, string | number>> = [];
 
     if (mode === "week") {
-      const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+      const weekStart = startOfWeek(
+        selectedYear === today.getFullYear() &&
+          selectedMonth === today.getMonth() + 1
+          ? today
+          : selectedDate,
+        { weekStartsOn: 1 }
+      );
+
       const days = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i));
 
-      rows = await Promise.all(
-        days.map(async (day) => {
-          const { start, end } = getBaliDayRange(day);
-          const count = await countVisitorsBetween(start, end);
+      for (const day of days) {
+        const { start, end } = getBaliDayRange(day);
 
-          return {
-            periode: format(day, "EEEE", { locale: localeId }),
-            tanggal_awal: format(day, "yyyy-MM-dd"),
-            tanggal_akhir: format(day, "yyyy-MM-dd"),
-            total_tamu: count,
-          };
-        })
-      );
+        const total = await countVisitorsBetween(start, end);
+        const departmentCounts = await getDepartmentCounts(start, end);
+
+        const row: Record<string, string | number> = {
+          periode: format(day, "EEEE", { locale: localeId }),
+          tanggal_awal: format(day, "yyyy-MM-dd"),
+          tanggal_akhir: format(day, "yyyy-MM-dd"),
+          total_tamu: total,
+        };
+
+        departments.forEach((department) => {
+          row[department.name] = departmentCounts[department.id] ?? 0;
+        });
+
+        rows.push(row);
+      }
     }
 
     if (mode === "month") {
-      const monthStart = startOfMonth(today);
-      const monthEnd = endOfMonth(today);
+      const monthStart = startOfMonth(selectedDate);
+      const monthEnd = endOfMonth(selectedDate);
 
       const weeks: Array<{
         label: string;
@@ -89,89 +140,121 @@ export async function GET(request: NextRequest) {
       let weekNumber = 1;
 
       while (current <= monthEnd) {
-        const start = new Date(current);
-        const end = new Date(current);
+        const startDate = new Date(current);
+        const endDate = new Date(current);
 
-        while (end < monthEnd && getDay(end) !== 0) {
-          end.setDate(end.getDate() + 1);
+        while (endDate < monthEnd && getDay(endDate) !== 0) {
+          endDate.setDate(endDate.getDate() + 1);
         }
 
         weeks.push({
           label: `Minggu ${weekNumber}`,
-          startDate: start,
-          endDate: end,
+          startDate,
+          endDate,
         });
 
-        current = addDays(end, 1);
+        current = addDays(endDate, 1);
         weekNumber++;
       }
 
-      rows = await Promise.all(
-        weeks.map(async (week) => {
-          const { start } = getBaliDayRange(week.startDate);
-          const { end } = getBaliDayRange(week.endDate);
-          const count = await countVisitorsBetween(start, end);
+      for (const week of weeks) {
+        const { start } = getBaliDayRange(week.startDate);
+        const { end } = getBaliDayRange(week.endDate);
 
-          return {
-            periode: week.label,
-            tanggal_awal: format(week.startDate, "yyyy-MM-dd"),
-            tanggal_akhir: format(week.endDate, "yyyy-MM-dd"),
-            total_tamu: count,
-          };
-        })
-      );
+        const total = await countVisitorsBetween(start, end);
+        const departmentCounts = await getDepartmentCounts(start, end);
+
+        const row: Record<string, string | number> = {
+          periode: week.label,
+          tanggal_awal: format(week.startDate, "yyyy-MM-dd"),
+          tanggal_akhir: format(week.endDate, "yyyy-MM-dd"),
+          total_tamu: total,
+        };
+
+        departments.forEach((department) => {
+          row[department.name] = departmentCounts[department.id] ?? 0;
+        });
+
+        rows.push(row);
+      }
     }
 
     if (mode === "year") {
-      const yearStart = startOfYear(today);
+      const yearStart = startOfYear(new Date(selectedYear, 0, 1));
+      const yearEnd = endOfYear(yearStart);
 
-      rows = await Promise.all(
-        Array.from({ length: 12 }, async (_, i) => {
-          const month = new Date(yearStart.getFullYear(), i, 1);
-          const startMonth = startOfMonth(month);
-          const endMonth = endOfMonth(month);
+      const months = Array.from({ length: 12 }, (_, i) => {
+        const date = new Date(selectedYear, i, 1);
 
-          const { start } = getBaliDayRange(startMonth);
-          const { end } = getBaliDayRange(endMonth);
-          const count = await countVisitorsBetween(start, end);
+        return {
+          label: format(date, "MMMM yyyy", { locale: localeId }),
+          startDate: startOfMonth(date),
+          endDate: endOfMonth(date),
+        };
+      });
 
-          return {
-            periode: format(month, "MMMM yyyy", { locale: localeId }),
-            tanggal_awal: format(startMonth, "yyyy-MM-dd"),
-            tanggal_akhir: format(endMonth, "yyyy-MM-dd"),
-            total_tamu: count,
-          };
-        })
-      );
+      for (const month of months) {
+        const { start } = getBaliDayRange(month.startDate);
+        const { end } = getBaliDayRange(month.endDate);
+
+        const total = await countVisitorsBetween(start, end);
+        const departmentCounts = await getDepartmentCounts(start, end);
+
+        const row: Record<string, string | number> = {
+          periode: month.label,
+          tanggal_awal: format(month.startDate, "yyyy-MM-dd"),
+          tanggal_akhir: format(month.endDate, "yyyy-MM-dd"),
+          total_tamu: total,
+        };
+
+        departments.forEach((department) => {
+          row[department.name] = departmentCounts[department.id] ?? 0;
+        });
+
+        rows.push(row);
+      }
     }
 
-    const header = ["periode", "tanggal_awal", "tanggal_akhir", "total_tamu"];
+    const header = [
+      "periode",
+      "tanggal_awal",
+      "tanggal_akhir",
+      "total_tamu",
+      ...departments.map((department) => department.name),
+    ];
 
     const csv =
-      header.join(",") +
+      "\uFEFF" +
+      header.map(escapeCsv).join(",") +
       "\n" +
       rows
         .map((row) =>
-          [row.periode, row.tanggal_awal, row.tanggal_akhir, row.total_tamu]
-            .map(escapeCsv)
-            .join(",")
+          header.map((key) => escapeCsv(row[key] ?? 0)).join(",")
         )
         .join("\n");
+
+    const fileLabel =
+      mode === "week"
+        ? "mingguan"
+        : mode === "month"
+        ? "bulanan"
+        : "tahunan";
 
     return new NextResponse(csv, {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="laporan-tamu-${mode}_${format(
-          today,
-          "yyyy-MM-dd"
-        )}.csv"`,
+        "Content-Disposition": `attachment; filename="laporan-tamu-${fileLabel}-${selectedYear}-${String(
+          selectedMonth
+        ).padStart(2, "0")}.csv"`,
       },
     });
   } catch (error) {
     console.error("Export visitors summary error:", error);
 
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
-
