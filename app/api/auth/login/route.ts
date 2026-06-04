@@ -53,10 +53,10 @@ export async function POST(request: NextRequest) {
 
     // Find user
     const user = await prisma.user.findUnique({
-      where: { username: username.toLowerCase() },
+      where: { username },
     });
 
-    if (!user || !user.isActive) {
+    if (!user || !user.is_active) {
       await new Promise((r) => setTimeout(r, 1000)); // Prevent timing attacks
       return NextResponse.json(
         { error: "Unauthorized", message: "Username atau password salah" },
