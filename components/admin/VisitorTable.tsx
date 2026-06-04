@@ -5,7 +5,6 @@ import {
   Search,
   Download,
   Eye,
-  Trash2,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
@@ -14,9 +13,13 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import Link from "next/link";
 import DepartmentSelect from "@/components/shared/DepartmentSelect";
-import { formatDateTime, getStatusBadgeColor, getStatusLabel, cn } from "@/lib/utils";
+import {
+  formatDateTime,
+  getStatusBadgeColor,
+  getStatusLabel,
+  cn,
+} from "@/lib/utils";
 
 interface UploadedFile {
   id: string;
@@ -53,11 +56,20 @@ interface Visitor {
 
 function formatFileSize(size: number) {
   if (!size) return "-";
-
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-white/40">
+        {label}
+      </p>
+      <p className="mt-2 break-words text-sm font-medium text-white">{value}</p>
+    </div>
+  );
 }
 
 function VisitorDetailModal({
@@ -102,10 +114,7 @@ function VisitorDetailModal({
               label="Tanggal Kunjungan"
               value={formatDateTime(visitor.visitDate)}
             />
-            <DetailItem
-              label="Status"
-              value={getStatusLabel(visitor.status)}
-            />
+            <DetailItem label="Status" value={getStatusLabel(visitor.status)} />
             <DetailItem
               label="Waktu Checkout"
               value={
@@ -179,17 +188,6 @@ function VisitorDetailModal({
   );
 }
 
-function DetailItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-white/40">
-        {label}
-      </p>
-      <p className="mt-2 break-words text-sm font-medium text-white">{value}</p>
-    </div>
-  );
-}
-
 export default function VisitorTablePage() {
   const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [total, setTotal] = useState(0);
@@ -204,7 +202,6 @@ export default function VisitorTablePage() {
   const [exporting, setExporting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
-  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   const fetchVisitors = useCallback(async () => {
     setIsLoading(true);
@@ -240,54 +237,22 @@ export default function VisitorTablePage() {
 
   useEffect(() => {
     const timer = setTimeout(fetchVisitors, search ? 300 : 0);
-
     return () => clearTimeout(timer);
   }, [fetchVisitors, search]);
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Hapus data tamu "${name}"? Tindakan ini tidak dapat dibatalkan.`)) {
-      return;
-    }
-
-    setIsDeleting(id);
-
-    try {
-      const res = await fetch(`/api/visitors/${id}`, {
-        method: "DELETE",
-      });
-
-      if (!res.ok) {
-        throw new Error("Gagal menghapus data");
-      }
-
-      toast.success("Data tamu berhasil dihapus");
-      fetchVisitors();
-    } catch {
-      toast.error("Gagal menghapus data");
-    } finally {
-      setIsDeleting(null);
-    }
-  };
-
-  const handleDownloadCsv = async () => {
-    if (!folderDepartmentId) {
-      toast.error("Pilih Tujuan / Folder dulu");
-      return;
-    }
-
+  const handleDownloadExcel = async () => {
     try {
       setExporting(true);
 
       const params = new URLSearchParams();
 
-      params.set("departmentId", folderDepartmentId);
-      params.set("tzOffsetMinutes", "480");
-
+      if (search) params.set("search", search);
+      if (folderDepartmentId) params.set("departmentId", folderDepartmentId);
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
 
       const res = await fetch(
-        `/api/reports/visitors-by-department-detail?${params.toString()}`
+        `/api/reports/visitors-detail-xlsx?${params.toString()}`
       );
 
       if (!res.ok) {
@@ -299,7 +264,8 @@ export default function VisitorTablePage() {
       const filename =
         res.headers
           .get("Content-Disposition")
-          ?.match(/filename="?([^";]+)"?/)?.[1] || "buku-tamu-folder.csv";
+          ?.match(/filename="?([^";]+)"?/)?.[1] ||
+        "laporan-detail-buku-tamu.xlsx";
 
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -313,7 +279,7 @@ export default function VisitorTablePage() {
 
       window.URL.revokeObjectURL(url);
     } catch {
-      toast.error("Gagal download CSV");
+      toast.error("Gagal download Excel");
     } finally {
       setExporting(false);
     }
@@ -331,23 +297,13 @@ export default function VisitorTablePage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={fetchVisitors}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/5"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </button>
-
-          <Link
-            href="/daftar"
-            target="_blank"
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blue-600/20 transition hover:bg-blue-700"
-          >
-            + Tambah Tamu
-          </Link>
-        </div>
+        <button
+          onClick={fetchVisitors}
+          className="inline-flex w-fit items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/5"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </button>
       </div>
 
       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
@@ -394,12 +350,12 @@ export default function VisitorTablePage() {
           />
 
           <button
-            onClick={handleDownloadCsv}
+            onClick={handleDownloadExcel}
             disabled={exporting}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
-            {exporting ? "Menyiapkan..." : "Download CSV"}
+            {exporting ? "Menyiapkan..." : "Download Excel"}
           </button>
         </div>
 
@@ -416,7 +372,7 @@ export default function VisitorTablePage() {
                   <th className="px-4 py-4">Keperluan</th>
                   <th className="px-4 py-4">Upload</th>
                   <th className="px-4 py-4">Status</th>
-                  <th className="px-4 py-4 text-right">Aksi</th>
+                  <th className="px-4 py-4 text-right">Detail</th>
                 </tr>
               </thead>
 
@@ -505,24 +461,13 @@ export default function VisitorTablePage() {
                       </td>
 
                       <td className="px-4 py-4">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end">
                           <button
                             onClick={() => setSelectedVisitor(visitor)}
                             className="rounded-lg p-2 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-500/10 dark:hover:text-blue-400"
                             title="Lihat detail"
                           >
                             <Eye className="h-4 w-4" />
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              handleDelete(visitor.id, visitor.name)
-                            }
-                            disabled={isDeleting === visitor.id}
-                            className="rounded-lg p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-500/10"
-                            title="Hapus"
-                          >
-                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </td>
@@ -536,8 +481,7 @@ export default function VisitorTablePage() {
 
         <div className="mt-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-gray-500 dark:text-white/40">
-            Menampilkan{" "}
-            {total === 0 ? 0 : (page - 1) * 10 + 1}–
+            Menampilkan {total === 0 ? 0 : (page - 1) * 10 + 1}–
             {Math.min(page * 10, total)} dari {total.toLocaleString("id-ID")}{" "}
             entri
           </p>
