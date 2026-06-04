@@ -14,6 +14,10 @@ const DEPARTMENTS = [
   { id: "d_ptsp_umum", code: "PTSP_UMUM", name: "Pelayanan Terpadu Satu Pintu Sub Bagian Umum", parentId: null, order: 6 },
   { id: "d_ptsp_info", code: "PTSP_INFO", name: "Pelayanan Terpadu Satu Pintu Informasi dan Pengaduan", parentId: null, order: 7 },
 
+  // ── PTSP Info (children) ────────────────────────────────────────────────
+  { id: "d_ptsp_ecourt", code: "PTSP_ECOURT", name: "Pelayanan Terpadu Satu Pintu Pojok e-Court", parentId: "d_ptsp_info", order: 71 },
+  { id: "d_ptsp_inzage", code: "PTSP_INZAGE", name: "Pelayanan Terpadu Satu Pintu Meja Inzage", parentId: "d_ptsp_info", order: 72 },
+
   // ── Pimpinan ─────────────────────────────────────────────────────────────
   { id: "d_ketua", code: "KETUA", name: "Ketua Pengadilan", parentId: null, order: 10 },
   { id: "d_wkil", code: "WKIL", name: "Wakil Ketua Pengadilan", parentId: null, order: 11 },
