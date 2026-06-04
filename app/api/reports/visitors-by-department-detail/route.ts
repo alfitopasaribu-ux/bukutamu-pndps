@@ -1,121 +1,246 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromCookie } from "@/lib/auth";
-import { parseISO, format } from "date-fns";
+import {
+  startOfMonth,
+  endOfMonth,
+  startOfYear,
+  endOfYear,
+  subMonths,
+  format,
+  startOfDay,
+  endOfDay,
+  subDays,
+} from "date-fns";
 import { getBaliDayRange } from "@/lib/baliTime";
 
 export async function GET(request: NextRequest) {
   try {
     const user = await getUserFromCookie(request);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const url = new URL(request.url);
-
-    const departmentId = url.searchParams.get("departmentId") || "";
-    if (!departmentId) {
-      return NextResponse.json({ error: "departmentId is required" }, { status: 400 });
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const entrySource = url.searchParams.get("entrySource") || "PUBLIC_FORM";
-    const tzOffsetMinutes = parseInt(url.searchParams.get("tzOffsetMinutes") || "480", 10);
-
-    const dateFromRaw = url.searchParams.get("dateFrom") || "";
-    const dateToRaw = url.searchParams.get("dateTo") || "";
-
     const today = new Date();
-    const defaultFrom = new Date(today);
-    defaultFrom.setDate(defaultFrom.getDate() - 29);
 
-    const dateFrom = dateFromRaw ? parseISO(dateFromRaw) : defaultFrom;
-    const dateTo = dateToRaw ? parseISO(dateToRaw) : today;
+    const todayStart = startOfDay(today);
+    const todayEnd = endOfDay(today);
 
-    const from = getBaliDayRange(dateFrom, tzOffsetMinutes).start;
-    const to = getBaliDayRange(dateTo, tzOffsetMinutes).end;
+    const monthStart = startOfMonth(today);
+    const monthEnd = endOfMonth(today);
 
-    const visitors = await prisma.visitor.findMany({
+    const yearStart = startOfYear(today);
+    const yearEnd = endOfYear(today);
+
+    const [
+      totalVisitors,
+      todayVisitors,
+      monthVisitors,
+      yearVisitors,
+      activeVisitors,
+      byStatus,
+      byDepartment,
+      recentLogs,
+      last30DaysRaw,
+      last12MonthsRaw,
+    ] = await Promise.all([
+      prisma.visitor.count(),
+
+      prisma.visitor.count({
+        where: {
+          visit_date: {
+            gte: todayStart,
+            lte: todayEnd,
+          },
+        },
+      }),
+
+      prisma.visitor.count({
+        where: {
+          visit_date: {
+            gte: monthStart,
+            lte: monthEnd,
+          },
+        },
+      }),
+
+      prisma.visitor.count({
+        where: {
+          visit_date: {
+            gte: yearStart,
+            lte: yearEnd,
+          },
+        },
+      }),
+
+      prisma.visitor.count({
+        where: {
+          status: {
+            in: ["REGISTERED", "CHECKED_IN", "IN_PROGRESS"],
+          },
+        },
+      }),
+
+      prisma.visitor.groupBy({
+        by: ["status"],
+        _count: {
+          status: true,
+        },
+      }),
+
+      prisma.visitor.groupBy({
+        by: ["department_id"],
+        _count: {
+          department_id: true,
+        },
+        orderBy: {
+          _count: {
+            department_id: "desc",
+          },
+        },
+        take: 6,
+      }),
+
+      prisma.visitLog.findMany({
+        take: 10,
+        orderBy: {
+          created_at: "desc",
+        },
+        include: {
+          visitors: {
+            select: {
+              name: true,
+              register_number: true,
+            },
+          },
+          users: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      }),
+
+      Promise.all(
+        Array.from({ length: 30 }, (_, i) => {
+          const date = subDays(today, 29 - i);
+          const { start, end } = getBaliDayRange(date);
+
+          return prisma.visitor
+            .count({
+              where: {
+                visit_date: {
+                  gte: start,
+                  lte: end,
+                },
+              },
+            })
+            .then((count) => ({
+              date: format(date, "yyyy-MM-dd"),
+              count,
+            }));
+        })
+      ),
+
+      Promise.all(
+        Array.from({ length: 12 }, (_, i) => {
+          const month = subMonths(today, 11 - i);
+          const start = startOfMonth(month);
+          const end = endOfMonth(month);
+
+          return prisma.visitor
+            .count({
+              where: {
+                visit_date: {
+                  gte: start,
+                  lte: end,
+                },
+              },
+            })
+            .then((count) => ({
+              month: format(month, "yyyy-MM"),
+              label: format(month, "MMM yyyy"),
+              count,
+            }));
+        })
+      ),
+    ]);
+
+    const weeksInMonth = 4;
+    const avgPerWeek = Math.round(monthVisitors / weeksInMonth);
+
+    const deptIds = byDepartment
+      .map((item) => item.department_id)
+      .filter(Boolean);
+
+    const departments = await prisma.department.findMany({
       where: {
-        entrySource: entrySource as any,
-        departmentId,
-        visitDate: {
-          gte: from,
-          lte: to,
+        id: {
+          in: deptIds,
         },
       },
-      include: {
-        department: { select: { id: true, name: true, code: true } },
-        uploadedFiles: true,
+      select: {
+        id: true,
+        name: true,
       },
-      orderBy: { visitDate: "asc" },
     });
 
-    const header = [
-      "date",
-      "departmentName",
-      "registerNumber",
-      "name",
-      "phone",
-      "purpose",
-      "status",
-      "entrySource",
-      "fileNames",
-      "fileUrls",
-    ];
+    const departmentMap = Object.fromEntries(
+      departments.map((department) => [department.id, department.name])
+    );
 
-    const escapeCsv = (v: any) => {
-      const s = String(v ?? "");
-      if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-      return s;
-    };
+    const mappedRecentLogs = recentLogs.map((log) => ({
+      ...log,
+      visitorId: log.visitor_id,
+      userId: log.user_id,
+      ipAddress: log.ip_address,
+      userAgent: log.user_agent,
+      createdAt: log.created_at,
+      visitor: log.visitors
+        ? {
+            name: log.visitors.name,
+            registerNumber: log.visitors.register_number,
+          }
+        : null,
+      user: log.users
+        ? {
+            name: log.users.name,
+          }
+        : null,
+    }));
 
-    const escapeExcelFormula = (v: string) => v.replace(/"/g, '""');
-
-    // Excel/Sheets: jadikan URL jadi hyperlink agar bisa di-click
-    // Format: =HYPERLINK("url","label")
-    const toExcelHyperlink = (url: string, label: string) => {
-      if (!url) return "";
-      return `=HYPERLINK("${escapeExcelFormula(url)}","${escapeExcelFormula(label)}")`;
-    };
-
-    const rows = visitors.map((v) => {
-      const labelDate = format(
-        new Date(v.visitDate.getTime() + tzOffsetMinutes * 60_000),
-        "yyyy-MM-dd"
-      );
-
-      const fileNames = (v.uploadedFiles ?? []).map((f) => f.originalName).join(";");
-
-      // Excel/Sheets: hyperlink butuh satu link per sel.
-      // Agar bisa diklik, pilih file pertama sebagai hyperlink.
-      const firstFile = (v.uploadedFiles ?? [])[0];
-      const fileUrls = firstFile ? toExcelHyperlink(firstFile.filePath, firstFile.originalName) : "";
-
-
-      return [
-        labelDate,
-        v.department?.name || "",
-        v.registerNumber,
-        v.name,
-        v.phone,
-        v.purpose,
-        v.status,
-        (v as any).entrySource,
-        fileNames,
-        fileUrls,
-      ].map(escapeCsv);
-    });
-
-    const csv = header.join(",") + "\n" + rows.map((r) => r.join(",")).join("\n");
-
-    return new NextResponse(csv, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="buku-tamu-department-${departmentId}_${format(dateFrom, "yyyy-MM-dd")}_to_${format(dateTo, "yyyy-MM-dd")}.csv"`,
+    return NextResponse.json({
+      stats: {
+        totalVisitors,
+        todayVisitors,
+        monthVisitors,
+        yearVisitors,
+        activeVisitors,
+        avgPerWeek,
       },
+
+      byStatus: byStatus.map((item) => ({
+        status: item.status,
+        count: item._count.status,
+      })),
+
+      byDepartment: byDepartment.map((item) => ({
+        departmentId: item.department_id,
+        name: departmentMap[item.department_id] || "Unknown",
+        count: item._count.department_id,
+      })),
+
+      recentLogs: mappedRecentLogs,
+      last30Days: last30DaysRaw,
+      last12Months: last12MonthsRaw,
     });
   } catch (error) {
-    console.error("Export department detail error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    console.error("Dashboard error:", error);
+
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
-
