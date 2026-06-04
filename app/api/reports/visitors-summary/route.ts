@@ -4,11 +4,9 @@ import { getUserFromCookie } from "@/lib/auth";
 import {
   addDays,
   endOfMonth,
-  endOfWeek,
   endOfYear,
   format,
   startOfMonth,
-  startOfWeek,
   startOfYear,
 } from "date-fns";
 import { id as localeId } from "date-fns/locale";
@@ -64,6 +62,23 @@ async function countByDepartment(start: Date, end: Date, departmentIds: string[]
   );
 }
 
+function getWeekRangeInMonth(year: number, month: number, weekNumber: number) {
+  const monthStart = startOfMonth(new Date(year, month - 1, 1));
+  const monthEnd = endOfMonth(monthStart);
+
+  const startDate = addDays(monthStart, (weekNumber - 1) * 7);
+  let endDate = addDays(startDate, 6);
+
+  if (endDate > monthEnd) {
+    endDate = monthEnd;
+  }
+
+  return {
+    startDate,
+    endDate,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getUserFromCookie(request);
@@ -83,6 +98,8 @@ export async function GET(request: NextRequest) {
 
     const selectedMonth =
       Number(url.searchParams.get("month")) || today.getMonth() + 1;
+
+    const selectedWeek = Number(url.searchParams.get("week")) || 1;
 
     const selectedDate = new Date(selectedYear, selectedMonth - 1, 1);
 
@@ -119,8 +136,7 @@ export async function GET(request: NextRequest) {
     }> = [];
 
     // =========================
-    // MODE DAY
-    // Per hari dalam bulan terpilih
+    // HARIAN: semua tanggal dalam bulan terpilih
     // =========================
     if (mode === "day") {
       const monthStart = startOfMonth(selectedDate);
@@ -151,83 +167,67 @@ export async function GET(request: NextRequest) {
     }
 
     // =========================
-    // MODE WEEK
-    // Per minggu dalam bulan terpilih
+    // MINGGUAN: hanya minggu yang dipilih
+    // Contoh: week=1 hanya Minggu 1, tidak ikut Minggu 2
     // =========================
     if (mode === "week") {
+      const { startDate, endDate } = getWeekRangeInMonth(
+        selectedYear,
+        selectedMonth,
+        selectedWeek
+      );
+
+      const { start } = getBaliDayRange(startDate);
+      const { end } = getBaliDayRange(endDate);
+
+      const countMap = await countByDepartment(start, end, departmentIds);
+
+      for (const department of departments) {
+        rows.push({
+          jenis_laporan: "mingguan",
+          periode: `Minggu ${selectedWeek}`,
+          tanggal_awal: format(startDate, "yyyy-MM-dd"),
+          tanggal_akhir: format(endDate, "yyyy-MM-dd"),
+          bulan: getMonthName(startDate),
+          tahun: selectedYear,
+          kode_departemen: department.code,
+          departemen: department.name,
+          total_tamu: countMap[department.id] ?? 0,
+        });
+      }
+    }
+
+    // =========================
+    // BULANAN: hanya bulan yang dipilih
+    // Contoh: month=6&year=2026 hanya Juni 2026
+    // =========================
+    if (mode === "month") {
       const monthStart = startOfMonth(selectedDate);
       const monthEnd = endOfMonth(selectedDate);
 
-      let current = new Date(monthStart);
-      let weekNumber = 1;
+      const { start } = getBaliDayRange(monthStart);
+      const { end } = getBaliDayRange(monthEnd);
 
-      while (current <= monthEnd) {
-        const weekStart = current;
-        let weekEnd = endOfWeek(current, { weekStartsOn: 1 });
+      const countMap = await countByDepartment(start, end, departmentIds);
 
-        if (weekEnd > monthEnd) {
-          weekEnd = monthEnd;
-        }
-
-        const { start } = getBaliDayRange(weekStart);
-        const { end } = getBaliDayRange(weekEnd);
-
-        const countMap = await countByDepartment(start, end, departmentIds);
-
-        for (const department of departments) {
-          rows.push({
-            jenis_laporan: "mingguan",
-            periode: `Minggu ${weekNumber}`,
-            tanggal_awal: format(weekStart, "yyyy-MM-dd"),
-            tanggal_akhir: format(weekEnd, "yyyy-MM-dd"),
-            bulan: getMonthName(weekStart),
-            tahun: weekStart.getFullYear(),
-            kode_departemen: department.code,
-            departemen: department.name,
-            total_tamu: countMap[department.id] ?? 0,
-          });
-        }
-
-        current = addDays(weekEnd, 1);
-        weekNumber++;
+      for (const department of departments) {
+        rows.push({
+          jenis_laporan: "bulanan",
+          periode: format(selectedDate, "MMMM yyyy", { locale: localeId }),
+          tanggal_awal: format(monthStart, "yyyy-MM-dd"),
+          tanggal_akhir: format(monthEnd, "yyyy-MM-dd"),
+          bulan: getMonthName(selectedDate),
+          tahun: selectedYear,
+          kode_departemen: department.code,
+          departemen: department.name,
+          total_tamu: countMap[department.id] ?? 0,
+        });
       }
     }
 
     // =========================
-    // MODE MONTH
-    // Per bulan dalam tahun terpilih
-    // =========================
-    if (mode === "month") {
-      for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
-        const monthDate = new Date(selectedYear, monthIndex, 1);
-
-        const monthStart = startOfMonth(monthDate);
-        const monthEnd = endOfMonth(monthDate);
-
-        const { start } = getBaliDayRange(monthStart);
-        const { end } = getBaliDayRange(monthEnd);
-
-        const countMap = await countByDepartment(start, end, departmentIds);
-
-        for (const department of departments) {
-          rows.push({
-            jenis_laporan: "bulanan",
-            periode: format(monthDate, "MMMM yyyy", { locale: localeId }),
-            tanggal_awal: format(monthStart, "yyyy-MM-dd"),
-            tanggal_akhir: format(monthEnd, "yyyy-MM-dd"),
-            bulan: getMonthName(monthDate),
-            tahun: selectedYear,
-            kode_departemen: department.code,
-            departemen: department.name,
-            total_tamu: countMap[department.id] ?? 0,
-          });
-        }
-      }
-    }
-
-    // =========================
-    // MODE YEAR
-    // Total satu tahun terpilih
+    // TAHUNAN: hanya tahun yang dipilih
+    // Bisa 2026, 2027, 2028, dst
     // =========================
     if (mode === "year") {
       const yearDate = new Date(selectedYear, 0, 1);
@@ -283,7 +283,7 @@ export async function GET(request: NextRequest) {
       mode === "day"
         ? "harian"
         : mode === "week"
-        ? "mingguan"
+        ? `minggu-${selectedWeek}`
         : mode === "month"
         ? "bulanan"
         : "tahunan";
