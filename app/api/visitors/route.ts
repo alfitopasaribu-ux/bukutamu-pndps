@@ -4,9 +4,7 @@ import { visitorSchema } from "@/lib/validations";
 import { generateRegisterNumber, sanitizeInput } from "@/lib/utils";
 import { getUserFromCookie } from "@/lib/auth";
 
-
-
-// GET - List visitors (admin only)
+// GET - List visitors admin
 export async function GET(request: NextRequest) {
   try {
     const user = await getUserFromCookie(request);
@@ -16,6 +14,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "10");
     const search = searchParams.get("search") || "";
@@ -26,48 +25,105 @@ export async function GET(request: NextRequest) {
 
     const skip = (page - 1) * limit;
 
-    const where: any = { entrySource: "PUBLIC_FORM" };
-
-    // NOTE: untuk filter tujuan/folder + tanggal, kita tetap gunakan visitDate sebagai sumber kebenaran.
-    // jika ingin meliputi ADMIN_FORM nanti bisa diperluas menjadi ALL.
-
+    const where: any = {};
 
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { registerNumber: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search } },
-        { purpose: { contains: search, mode: "insensitive" } },
+        {
+          name: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
+        {
+          register_number: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
+        {
+          phone: {
+            contains: search,
+          },
+        },
+        {
+          purpose: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
       ];
     }
 
-    if (status) where.status = status;
-    if (departmentId) where.departmentId = departmentId;
-
-    if (dateFrom || dateTo) {
-      where.visitDate = {};
-      if (dateFrom) where.visitDate.gte = new Date(dateFrom);
-      if (dateTo) where.visitDate.lte = new Date(dateTo + "T23:59:59");
+    if (status) {
+      where.status = status;
     }
 
+    if (departmentId) {
+      where.department_id = departmentId;
+    }
+
+    if (dateFrom || dateTo) {
+      where.visit_date = {};
+
+      if (dateFrom) {
+        where.visit_date.gte = new Date(dateFrom);
+      }
+
+      if (dateTo) {
+        where.visit_date.lte = new Date(`${dateTo}T23:59:59`);
+      }
+    }
 
     const [visitors, total] = await Promise.all([
       prisma.visitor.findMany({
         where,
         include: {
-          department: { select: { id: true, name: true, code: true } },
-          uploadedFiles: { select: { id: true, originalName: true, fileType: true } },
-          _count: { select: { uploadedFiles: true } },
+          departments: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+          uploaded_files: {
+            select: {
+              id: true,
+              original_name: true,
+              file_type: true,
+            },
+          },
+          _count: {
+            select: {
+              uploaded_files: true,
+            },
+          },
         },
-        orderBy: { visitDate: "desc" },
+        orderBy: {
+          visit_date: "desc",
+        },
         skip,
         take: limit,
       }),
-      prisma.visitor.count({ where }),
+      prisma.visitor.count({
+        where,
+      }),
     ]);
 
+    const mappedVisitors = visitors.map((visitor: any) => ({
+      ...visitor,
+      registerNumber: visitor.register_number,
+      departmentId: visitor.department_id,
+      visitDate: visitor.visit_date,
+      checkoutTime: visitor.checkout_time,
+      createdAt: visitor.created_at,
+      updatedAt: visitor.updated_at,
+      department: visitor.departments,
+      uploadedFiles: visitor.uploaded_files,
+    }));
+
     return NextResponse.json({
-      data: visitors,
+      data: mappedVisitors,
       pagination: {
         page,
         limit,
@@ -77,99 +133,108 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Get visitors error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
 
-// POST - Create visitor (public)
+// POST - Create visitor public
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const user = await getUserFromCookie(request);
-
 
     const validation = visitorSchema.safeParse(body);
+
     if (!validation.success) {
       return NextResponse.json(
-        { error: "Validation Error", errors: validation.error.flatten().fieldErrors },
+        {
+          error: "Validation Error",
+          errors: validation.error.flatten().fieldErrors,
+        },
         { status: 400 }
       );
     }
 
     const data = validation.data;
 
-    // Sanitize inputs
     const sanitized = {
       name: sanitizeInput(data.name),
       address: sanitizeInput(data.address),
       phone: sanitizeInput(data.phone),
       purpose: sanitizeInput(data.purpose),
-      departmentId: data.departmentId,
+      department_id: data.departmentId,
       notes: data.notes ? sanitizeInput(data.notes) : undefined,
     };
 
-    // Verify department exists
     const department = await prisma.department.findUnique({
-      where: { id: sanitized.departmentId },
+      where: {
+        id: sanitized.department_id,
+      },
     });
 
-    if (!department || !department.isActive) {
+    if (!department || !department.is_active) {
       return NextResponse.json(
         { error: "Department tidak ditemukan atau tidak aktif" },
         { status: 400 }
       );
     }
 
-    // Generate register number
     const registerNumber = await generateRegisterNumber(prisma);
 
-    const entrySource = body.entrySource === "ADMIN_FORM" ? "ADMIN_FORM" : "PUBLIC_FORM";
-
-    // Rules pilihan: admin tidak boleh tambah tamu (ADMIN_FORM tidak diizinkan)
-    if (entrySource === "ADMIN_FORM") {
-      return NextResponse.json(
-        { error: "Tambah tamu via admin tidak diizinkan. Gunakan daftar tamu melalui halaman registrasi." },
-        { status: 403 }
-      );
-    }
-
-
-    // Create visitor
     const visitor = await prisma.visitor.create({
       data: {
         ...sanitized,
-        registerNumber,
+        register_number: registerNumber,
         status: "REGISTERED",
-        entrySource,
-        visitDate: new Date(),
+        visit_date: new Date(),
       },
       include: {
-        department: true,
+        departments: true,
       },
     });
 
-    // Log activity
     await prisma.visitLog.create({
       data: {
-        visitorId: visitor.id,
+        visitor_id: visitor.id,
         action: "VISITOR_REGISTERED",
         details: `Tamu baru: ${visitor.name} - ${registerNumber}`,
-        ipAddress: request.headers.get("x-forwarded-for") || "unknown",
-        userAgent: request.headers.get("user-agent") || "",
+        ip_address:
+          request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+          request.headers.get("x-real-ip") ||
+          "unknown",
+        user_agent: request.headers.get("user-agent") || "",
       },
     });
+
+    const mappedVisitor = {
+      ...visitor,
+      registerNumber: visitor.register_number,
+      departmentId: visitor.department_id,
+      visitDate: visitor.visit_date,
+      checkoutTime: visitor.checkout_time,
+      createdAt: visitor.created_at,
+      updatedAt: visitor.updated_at,
+      department: visitor.departments,
+    };
 
     return NextResponse.json(
       {
         success: true,
         message: "Registrasi berhasil",
-        data: visitor,
+        data: mappedVisitor,
         registerNumber,
       },
       { status: 201 }
     );
   } catch (error) {
     console.error("Create visitor error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
