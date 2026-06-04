@@ -4,17 +4,29 @@ import { getUserFromCookie } from "@/lib/auth";
 import {
   addDays,
   endOfMonth,
+  endOfWeek,
+  endOfYear,
   format,
-  getDay,
   startOfMonth,
   startOfWeek,
   startOfYear,
-  endOfYear,
 } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { getBaliDayRange } from "@/lib/baliTime";
 
-type Mode = "week" | "month" | "year";
+type ReportMode = "day" | "week" | "month" | "year";
+
+const PTSP_CODES = [
+  "PTSP_PID",
+  "PTSP_PID_K",
+  "PTSP_PER",
+  "PTSP_PER_K",
+  "PTSP_HK",
+  "PTSP_UMUM",
+  "PTSP_INFO",
+  "PTSP_ECOURT",
+  "PTSP_INZAGE",
+];
 
 function escapeCsv(value: unknown) {
   const text = String(value ?? "");
@@ -26,10 +38,17 @@ function escapeCsv(value: unknown) {
   return text;
 }
 
-async function getDepartmentCounts(start: Date, end: Date) {
+function getMonthName(date: Date) {
+  return format(date, "MMMM", { locale: localeId });
+}
+
+async function countByDepartment(start: Date, end: Date, departmentIds: string[]) {
   const result = await prisma.visitor.groupBy({
     by: ["department_id"],
     where: {
+      department_id: {
+        in: departmentIds,
+      },
       visit_date: {
         gte: start,
         lte: end,
@@ -41,22 +60,8 @@ async function getDepartmentCounts(start: Date, end: Date) {
   });
 
   return Object.fromEntries(
-    result.map((item) => [
-      item.department_id,
-      item._count.department_id,
-    ])
+    result.map((item) => [item.department_id, item._count.department_id])
   );
-}
-
-async function countVisitorsBetween(start: Date, end: Date) {
-  return prisma.visitor.count({
-    where: {
-      visit_date: {
-        gte: start,
-        lte: end,
-      },
-    },
-  });
 }
 
 export async function GET(request: NextRequest) {
@@ -69,11 +74,13 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url);
 
-    const mode = (url.searchParams.get("mode") || "week") as Mode;
+    const mode = (url.searchParams.get("mode") || "day") as ReportMode;
 
     const today = new Date();
 
-    const selectedYear = Number(url.searchParams.get("year")) || today.getFullYear();
+    const selectedYear =
+      Number(url.searchParams.get("year")) || today.getFullYear();
+
     const selectedMonth =
       Number(url.searchParams.get("month")) || today.getMonth() + 1;
 
@@ -81,146 +88,183 @@ export async function GET(request: NextRequest) {
 
     const departments = await prisma.department.findMany({
       where: {
+        code: {
+          in: PTSP_CODES,
+        },
         is_active: true,
       },
       select: {
         id: true,
+        code: true,
         name: true,
+        order: true,
       },
       orderBy: {
         order: "asc",
       },
     });
 
-    const rows: Array<Record<string, string | number>> = [];
+    const departmentIds = departments.map((department) => department.id);
 
-    if (mode === "week") {
-      const weekStart = startOfWeek(
-        selectedYear === today.getFullYear() &&
-          selectedMonth === today.getMonth() + 1
-          ? today
-          : selectedDate,
-        { weekStartsOn: 1 }
-      );
+    const rows: Array<{
+      jenis_laporan: string;
+      periode: string;
+      tanggal_awal: string;
+      tanggal_akhir: string;
+      bulan: string;
+      tahun: number;
+      kode_departemen: string;
+      departemen: string;
+      total_tamu: number;
+    }> = [];
 
-      const days = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i));
-
-      for (const day of days) {
-        const { start, end } = getBaliDayRange(day);
-
-        const total = await countVisitorsBetween(start, end);
-        const departmentCounts = await getDepartmentCounts(start, end);
-
-        const row: Record<string, string | number> = {
-          periode: format(day, "EEEE", { locale: localeId }),
-          tanggal_awal: format(day, "yyyy-MM-dd"),
-          tanggal_akhir: format(day, "yyyy-MM-dd"),
-          total_tamu: total,
-        };
-
-        departments.forEach((department) => {
-          row[department.name] = departmentCounts[department.id] ?? 0;
-        });
-
-        rows.push(row);
-      }
-    }
-
-    if (mode === "month") {
+    // =========================
+    // MODE DAY
+    // Per hari dalam bulan terpilih
+    // =========================
+    if (mode === "day") {
       const monthStart = startOfMonth(selectedDate);
       const monthEnd = endOfMonth(selectedDate);
 
-      const weeks: Array<{
-        label: string;
-        startDate: Date;
-        endDate: Date;
-      }> = [];
+      let current = new Date(monthStart);
+
+      while (current <= monthEnd) {
+        const { start, end } = getBaliDayRange(current);
+        const countMap = await countByDepartment(start, end, departmentIds);
+
+        for (const department of departments) {
+          rows.push({
+            jenis_laporan: "harian",
+            periode: format(current, "EEEE", { locale: localeId }),
+            tanggal_awal: format(current, "yyyy-MM-dd"),
+            tanggal_akhir: format(current, "yyyy-MM-dd"),
+            bulan: getMonthName(current),
+            tahun: current.getFullYear(),
+            kode_departemen: department.code,
+            departemen: department.name,
+            total_tamu: countMap[department.id] ?? 0,
+          });
+        }
+
+        current = addDays(current, 1);
+      }
+    }
+
+    // =========================
+    // MODE WEEK
+    // Per minggu dalam bulan terpilih
+    // =========================
+    if (mode === "week") {
+      const monthStart = startOfMonth(selectedDate);
+      const monthEnd = endOfMonth(selectedDate);
 
       let current = new Date(monthStart);
       let weekNumber = 1;
 
       while (current <= monthEnd) {
-        const startDate = new Date(current);
-        const endDate = new Date(current);
+        const weekStart = current;
+        let weekEnd = endOfWeek(current, { weekStartsOn: 1 });
 
-        while (endDate < monthEnd && getDay(endDate) !== 0) {
-          endDate.setDate(endDate.getDate() + 1);
+        if (weekEnd > monthEnd) {
+          weekEnd = monthEnd;
         }
 
-        weeks.push({
-          label: `Minggu ${weekNumber}`,
-          startDate,
-          endDate,
-        });
+        const { start } = getBaliDayRange(weekStart);
+        const { end } = getBaliDayRange(weekEnd);
 
-        current = addDays(endDate, 1);
+        const countMap = await countByDepartment(start, end, departmentIds);
+
+        for (const department of departments) {
+          rows.push({
+            jenis_laporan: "mingguan",
+            periode: `Minggu ${weekNumber}`,
+            tanggal_awal: format(weekStart, "yyyy-MM-dd"),
+            tanggal_akhir: format(weekEnd, "yyyy-MM-dd"),
+            bulan: getMonthName(weekStart),
+            tahun: weekStart.getFullYear(),
+            kode_departemen: department.code,
+            departemen: department.name,
+            total_tamu: countMap[department.id] ?? 0,
+          });
+        }
+
+        current = addDays(weekEnd, 1);
         weekNumber++;
-      }
-
-      for (const week of weeks) {
-        const { start } = getBaliDayRange(week.startDate);
-        const { end } = getBaliDayRange(week.endDate);
-
-        const total = await countVisitorsBetween(start, end);
-        const departmentCounts = await getDepartmentCounts(start, end);
-
-        const row: Record<string, string | number> = {
-          periode: week.label,
-          tanggal_awal: format(week.startDate, "yyyy-MM-dd"),
-          tanggal_akhir: format(week.endDate, "yyyy-MM-dd"),
-          total_tamu: total,
-        };
-
-        departments.forEach((department) => {
-          row[department.name] = departmentCounts[department.id] ?? 0;
-        });
-
-        rows.push(row);
       }
     }
 
+    // =========================
+    // MODE MONTH
+    // Per bulan dalam tahun terpilih
+    // =========================
+    if (mode === "month") {
+      for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
+        const monthDate = new Date(selectedYear, monthIndex, 1);
+
+        const monthStart = startOfMonth(monthDate);
+        const monthEnd = endOfMonth(monthDate);
+
+        const { start } = getBaliDayRange(monthStart);
+        const { end } = getBaliDayRange(monthEnd);
+
+        const countMap = await countByDepartment(start, end, departmentIds);
+
+        for (const department of departments) {
+          rows.push({
+            jenis_laporan: "bulanan",
+            periode: format(monthDate, "MMMM yyyy", { locale: localeId }),
+            tanggal_awal: format(monthStart, "yyyy-MM-dd"),
+            tanggal_akhir: format(monthEnd, "yyyy-MM-dd"),
+            bulan: getMonthName(monthDate),
+            tahun: selectedYear,
+            kode_departemen: department.code,
+            departemen: department.name,
+            total_tamu: countMap[department.id] ?? 0,
+          });
+        }
+      }
+    }
+
+    // =========================
+    // MODE YEAR
+    // Total satu tahun terpilih
+    // =========================
     if (mode === "year") {
-      const yearStart = startOfYear(new Date(selectedYear, 0, 1));
-      const yearEnd = endOfYear(yearStart);
+      const yearDate = new Date(selectedYear, 0, 1);
 
-      const months = Array.from({ length: 12 }, (_, i) => {
-        const date = new Date(selectedYear, i, 1);
+      const yearStart = startOfYear(yearDate);
+      const yearEnd = endOfYear(yearDate);
 
-        return {
-          label: format(date, "MMMM yyyy", { locale: localeId }),
-          startDate: startOfMonth(date),
-          endDate: endOfMonth(date),
-        };
-      });
+      const { start } = getBaliDayRange(yearStart);
+      const { end } = getBaliDayRange(yearEnd);
 
-      for (const month of months) {
-        const { start } = getBaliDayRange(month.startDate);
-        const { end } = getBaliDayRange(month.endDate);
+      const countMap = await countByDepartment(start, end, departmentIds);
 
-        const total = await countVisitorsBetween(start, end);
-        const departmentCounts = await getDepartmentCounts(start, end);
-
-        const row: Record<string, string | number> = {
-          periode: month.label,
-          tanggal_awal: format(month.startDate, "yyyy-MM-dd"),
-          tanggal_akhir: format(month.endDate, "yyyy-MM-dd"),
-          total_tamu: total,
-        };
-
-        departments.forEach((department) => {
-          row[department.name] = departmentCounts[department.id] ?? 0;
+      for (const department of departments) {
+        rows.push({
+          jenis_laporan: "tahunan",
+          periode: `Tahun ${selectedYear}`,
+          tanggal_awal: format(yearStart, "yyyy-MM-dd"),
+          tanggal_akhir: format(yearEnd, "yyyy-MM-dd"),
+          bulan: "Semua Bulan",
+          tahun: selectedYear,
+          kode_departemen: department.code,
+          departemen: department.name,
+          total_tamu: countMap[department.id] ?? 0,
         });
-
-        rows.push(row);
       }
     }
 
     const header = [
+      "jenis_laporan",
       "periode",
       "tanggal_awal",
       "tanggal_akhir",
+      "bulan",
+      "tahun",
+      "kode_departemen",
+      "departemen",
       "total_tamu",
-      ...departments.map((department) => department.name),
     ];
 
     const csv =
@@ -229,12 +273,16 @@ export async function GET(request: NextRequest) {
       "\n" +
       rows
         .map((row) =>
-          header.map((key) => escapeCsv(row[key] ?? 0)).join(",")
+          header
+            .map((key) => escapeCsv(row[key as keyof typeof row]))
+            .join(",")
         )
         .join("\n");
 
-    const fileLabel =
-      mode === "week"
+    const label =
+      mode === "day"
+        ? "harian"
+        : mode === "week"
         ? "mingguan"
         : mode === "month"
         ? "bulanan"
@@ -244,7 +292,7 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="laporan-tamu-${fileLabel}-${selectedYear}-${String(
+        "Content-Disposition": `attachment; filename="laporan-ptsp-${label}-${selectedYear}-${String(
           selectedMonth
         ).padStart(2, "0")}.csv"`,
       },
